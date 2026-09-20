@@ -10,10 +10,11 @@ dan in de zaal: jij raapt de ballen op en de ballenbuis achter je wordt almaar l
 ## Spelen
 
 - **Veeg** om te sturen, of gebruik de pijltjes (ook WASD en ZQSD).
-- De buis vertrekt pas als je zelf stuurt — ook na een botsing.
+- De buis vertrekt pas als je zelf stuurt — ook na een botsing en na elke tafel erbij.
 - ⚪ **Bal** — 10 punten, je buis groeit een stukje.
 - 🟠 **Oranje 3-sterren bal** — 50 punten, en je buis groeit *niet*. Blijft maar even liggen.
 - 🟩 **Tafels** — om de 8 ballen plooit iemand er eentje open. Hoe voller de zaal, hoe krapper.
+  Nooit vlak voor je neus: de baan recht vóór je blijft vrij.
 - 🔵 **Clubgenoten** — die wandelen dwars door de zaal en kijken niet uit.
 
 Tegen jezelf, een tafel, een clubgenoot of de zijlijn kost een hartje. Drie hartjes en de

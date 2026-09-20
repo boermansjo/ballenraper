@@ -180,6 +180,21 @@ function freeCell(){
 /* ---------- een tafel erbij ---------- */
 function addTable(){
   if (G.tables.length >= 8) return false;
+
+  /* De baan recht voor je blijft vrij. Anders plooit iemand een tafel
+     open op de plek waar jij net naartoe reed, en dan is het hartje weg
+     voor je iets kan doen. */
+  const verboden = new Set();
+  const kop = G.snake[0];
+  if (kop){
+    for (let k = 0; k <= 6; k++){
+      const bx = kop.x + G.dir.x * k, by = kop.y + G.dir.y * k;
+      for (let ox = -1; ox <= 1; ox++)
+        for (let oy = -1; oy <= 1; oy++)
+          verboden.add((bx + ox) + ',' + (by + oy));
+    }
+  }
+
   for (let tries = 0; tries < 300; tries++){
     const w = 4, h = 2;
     const x = 1 + ((Math.random() * (COLS - w - 2)) | 0);
@@ -199,6 +214,7 @@ function addTable(){
     for (let yy = y; yy < y + h && ok; yy++){
       for (let xx = x; xx < x + w && ok; xx++){
         if (blocked(xx, yy, { skipMates: true })) ok = false;
+        else if (verboden.has(xx + ',' + yy)) ok = false;
       }
     }
     if (!ok) continue;
@@ -703,7 +719,7 @@ function render(now){
   ctx.globalAlpha = 1;
 
   if (G.screen === 'play' && G.waiting){
-    const t = G.lives < 3 ? 'VEEG OM VERDER TE GAAN' : 'VEEG OM TE VERTREKKEN';
+    const t = (G.lives < 3 || G.balls > 0) ? 'VEEG OM VERDER TE GAAN' : 'VEEG OM TE VERTREKKEN';
     ctx.textAlign = 'center';
     ctx.font = '9px "Press Start 2P", monospace';
     const w = ctx.measureText(t).width + 22;
@@ -805,7 +821,7 @@ addEventListener('keydown', e => {
   else if (e.code === 'Space' || e.code === 'Enter'){
     e.preventDefault();
     if (G.screen === 'title') { Snd.init(); startGame(); }
-    else if (G.screen === 'table') show('play');
+    else if (G.screen === 'table'){ G.waiting = true; show('play'); }
     else if (G.screen === 'over')  startGame();
   }
 });
@@ -839,7 +855,7 @@ cv.addEventListener('contextmenu', e => e.preventDefault());
 $('btnStart').onclick  = () => { Snd.init(); startGame(); };
 $('btnHow').onclick    = () => show('how');
 $('btnBack').onclick   = () => show('title');
-$('btnResume').onclick = () => show('play');
+$('btnResume').onclick = () => { G.waiting = true; show('play'); };
 $('btnRetry').onclick  = () => startGame();
 $('btnBoard').onclick     = () => showBoard('title');
 $('btnBoardOver').onclick = () => showBoard('over');
