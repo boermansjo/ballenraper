@@ -83,6 +83,18 @@ previews, opnames, sterk vertraagde tabs — loopt die tijdstempel niet gelijk m
 tijd, en dan kruipt het spel in slow motion terwijl het beeld gewoon doorloopt. Met de
 wandklok blijft de snelheid overal dezelfde, ook als het tekenen hapert.
 
+### Vandaag en aller tijden
+
+De erelijst opent op **vandaag**: daar zit de wedstrijd van de dag. Eén knop ernaast
+zet hem op aller tijden. Dat vroeg geen kolom erbij en geen migratie — elke rij draagt
+al een `ts` in milliseconden, dus "vandaag" is niets meer dan één filter extra op de
+query (`ts=gte.<middernacht>`).
+
+Middernacht wordt berekend op de klok van **Europe/Brussels**, niet op die van het
+toestel. Anders ziet wie op reis is een andere dag dan de rest van de club, en klopt
+zijn ranglijst van vandaag niet. Dat gebeurt met `Intl.DateTimeFormat`, zonder
+bibliotheek; kan de browser dat niet, dan valt het terug op de lokale middernacht.
+
 ## Lokaal draaien
 
 ```bash

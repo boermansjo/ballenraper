@@ -17,6 +17,48 @@ const KEEP  = 60;
 
 const useRemote = CFG.provider === 'supabase' && !!CFG.url && !!CFG.key;
 
+/* ---------- welke dag is het? ----------
+   Niet volgens de klok van het toestel, maar volgens die van Wielsbeke.
+   Anders krijgt wie op reis is een andere dag te zien dan de rest van de
+   club, en klopt de ranglijst van vandaag voor hem niet. */
+const TZ = 'Europe/Brussels';
+
+function offsetMs(d){
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: TZ, hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  });
+  const p = {};
+  for (const deel of dtf.formatToParts(d)) p[deel.type] = deel.value;
+  const alsUTC = Date.UTC(+p.year, +p.month - 1, +p.day,
+                          p.hour === '24' ? 0 : +p.hour, +p.minute, +p.second);
+  return alsUTC - d.getTime();
+}
+
+/* middernacht van vandaag, in gewone epoch-milliseconden */
+function dagStart(d){
+  const nu = d || new Date();
+  try {
+    const off = offsetMs(nu);
+    const klok = new Date(nu.getTime() + off);
+    const mid = Date.UTC(klok.getUTCFullYear(), klok.getUTCMonth(), klok.getUTCDate());
+    // op de nacht dat het uur verzet wordt, is de offset om middernacht een
+    // andere dan die van nu; één keer bijstellen zet dat recht
+    return mid - offsetMs(new Date(mid - off));
+  } catch (_){
+    const l = new Date(nu); l.setHours(0, 0, 0, 0);   // oude browser: lokale klok
+    return l.getTime();
+  }
+}
+
+function dagNaam(d){
+  try {
+    return new Intl.DateTimeFormat('nl-BE', { timeZone: TZ, day: 'numeric', month: 'long' })
+      .format(d || new Date());
+  } catch (_){ return ''; }
+}
+
 /* ---------- namen: kort, zonder rommel ---------- */
 function cleanName(raw){
   return String(raw || '')
@@ -77,9 +119,10 @@ const rest = {
       'Content-Type': 'application/json'
     }, extra || {});
   },
-  async top(){
+  async top(sinds){
     const r = await fetch(
       this.url('?select=name,score,level,ts&game=eq.' + encodeURIComponent(GAME) +
+               (sinds ? '&ts=gte.' + sinds : '') +
                '&order=score.desc&limit=' + (LIMIT * 4)),
       { headers: this.head() }
     );
@@ -103,13 +146,22 @@ return {
   plausible,
   maxFor,
 
-  /* {rows, remote, offline} */
-  async top(){
-    if (!useRemote) return { rows: bestPerName(readLocal()), remote: false, offline: false };
+  dagStart,
+  dagNaam,
+
+  /* {rows, remote, offline, vandaag} — offline betekent: de gedeelde lijst
+     was niet bereikbaar, dit is wat er lokaal staat.
+     opts.vandaag houdt enkel de scores van vandaag over. */
+  async top(opts){
+    const vandaag = !!(opts && opts.vandaag);
+    const sinds = vandaag ? dagStart() : 0;
+    const lokaal = () => bestPerName(readLocal().filter(r => !sinds || r.ts >= sinds));
+
+    if (!useRemote) return { rows: lokaal(), remote: false, offline: false, vandaag };
     try {
-      return { rows: await rest.top(), remote: true, offline: false };
+      return { rows: await rest.top(sinds), remote: true, offline: false, vandaag };
     } catch (_){
-      return { rows: bestPerName(readLocal()), remote: true, offline: true };
+      return { rows: lokaal(), remote: true, offline: true, vandaag };
     }
   },
 

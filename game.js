@@ -45,6 +45,7 @@ const el = {
   tableBalls: $('tableBalls'), tableBonus: $('tableBonus'),
   overQuip: $('overQuip'), finalScore: $('finalScore'), bestOver: $('bestOver'),
   boardList: $('boardList'), boardNote: $('boardNote'),
+  tabDag: $('tabDag'), tabAlles: $('tabAlles'),
   submitRow: $('submitRow'), submitDone: $('submitDone'), playerName: $('playerName')
 };
 
@@ -814,6 +815,10 @@ function addText(t, col, dy){
    ERELIJST
    ============================================================ */
 let boardFrom = 'title', boardToken = 0;
+/* De erelijst opent op vandaag: daar zit de wedstrijd van de dag.
+   Aller tijden staat er één knop naast. */
+let boardVandaag = true;
+let boardMine = 0;          // welke rij oplichten, ook na het wisselen van tab
 
 function boardRow(cls, cells){
   const li = document.createElement('li');
@@ -830,16 +835,19 @@ function boardRow(cls, cells){
 async function renderBoard(mineTs){
   const mine = ++boardToken;
   const list = el.boardList;
+  el.tabDag.classList.toggle('on', boardVandaag);
+  el.tabAlles.classList.toggle('on', !boardVandaag);
   list.textContent = '';
   list.appendChild(boardRow('leeg', [['', 'Laden…']]));
   el.boardNote.textContent = '';
 
-  const res = await PipsBoard.top();
+  const res = await PipsBoard.top({ vandaag: boardVandaag });
   if (mine !== boardToken) return;
 
   list.textContent = '';
   if (!res.rows.length){
-    list.appendChild(boardRow('leeg', [['', 'Nog niemand. Wees de eerste.']]));
+    list.appendChild(boardRow('leeg', [['',
+      res.vandaag ? 'Vandaag nog niemand. Wees de eerste.' : 'Nog niemand. Wees de eerste.']]));
   } else {
     res.rows.forEach((r, i) => {
       list.appendChild(boardRow(mineTs && r.ts === mineTs ? 'me' : '', [
@@ -851,11 +859,13 @@ async function renderBoard(mineTs){
     });
   }
 
+  const dag = PipsBoard.dagNaam();
   el.boardNote.textContent =
     res.offline ? 'Geen verbinding met de clubranking. Dit is de lijst op dit toestel.'
-    : res.remote ? 'De ranglijst van heel de club. Iedereen raapt mee.'
-    : res.rows.length ? 'Deze lijst staat op dit toestel.'
-    : 'Speel een partij en zet je naam erbij.';
+    : !res.remote ? (res.rows.length ? 'Deze lijst staat op dit toestel.'
+                                     : 'Speel een partij en zet je naam erbij.')
+    : res.vandaag ? 'De ranglijst van vandaag' + (dag ? ', ' + dag : '') + '. Om middernacht begint alles opnieuw.'
+    : 'Alles sinds het begin. Per naam blijft enkel de beste partij staan.';
 
   const me = list.querySelector('.me');
   if (me) me.scrollIntoView({ block: 'center' });
@@ -863,6 +873,7 @@ async function renderBoard(mineTs){
 
 function showBoard(from, mineTs){
   boardFrom = from;
+  boardMine = mineTs || 0;
   show('board');
   renderBoard(mineTs);
 }
@@ -1471,6 +1482,8 @@ $('btnRetry').onclick  = () => startGame();
 $('btnBoard').onclick     = () => showBoard('title');
 $('btnBoardOver').onclick = () => showBoard('over');
 $('btnBoardBack').onclick = () => show(boardFrom);
+el.tabDag.onclick   = () => { if (!boardVandaag){ boardVandaag = true;  renderBoard(boardMine); } };
+el.tabAlles.onclick = () => { if ( boardVandaag){ boardVandaag = false; renderBoard(boardMine); } };
 
 $('btnShare').onclick = async () => {
   const txt = 'Ik raapte ' + G.balls + ' ballen voor ' + G.score +

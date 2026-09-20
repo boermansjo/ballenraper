@@ -274,6 +274,21 @@ body{
 .dot.buis{ background:linear-gradient(90deg,#f2f2f2 0 45%,#ffd08a 45% 75%,#e03026 75%); border-radius:5px; width:18px; height:8px; align-self:center; }
 .dot.celluloid{ background:radial-gradient(circle at 35% 30%, #fffbe0, #d9b45a); }
 .dot.fluit{ background:radial-gradient(circle at 62% 38%, #3a2a08 0 2px, #ffe37a 2px); }
+/* de twee tabbladen boven de erelijst */
+.tabs{ display:flex; gap:6px; }
+.tab{
+  font-family:inherit; font-size:8px; letter-spacing:1px;
+  color:#9dc0e0; background:#0d2f57;
+  border:2px solid #2b5c94; border-radius:6px;
+  padding:6px 10px 5px; cursor:pointer;
+  text-transform:uppercase;
+}
+.tab:hover{ color:#cfe9ff; border-color:#4b86c8; }
+.tab.on{
+  color:#04162c; background:linear-gradient(#ffe37a, var(--gold));
+  border-color:#fff3cf; text-shadow:none;
+}
+
 .fineprint{ font-size:8px; line-height:1.9; color:#9dc0e0; max-width:320px; }
 
 .clear-rows{ font-size:10px; width:min(280px,90%); display:flex; flex-direction:column; gap:9px; }
