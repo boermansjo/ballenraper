@@ -9,12 +9,11 @@ window.PIPSOUT = {
 
     provider: 'supabase',
 
-    /* Nog leeg tijdens het testen. Vóór dit live gaat moet de tabel
-       een kolom `game` krijgen — zie README.md — anders komen deze
-       scores in de ranglijst van PIPS OUT terecht.                  */
+    /* Nog leeg tijdens het testen. De SQL voor de tabel staat in
+       README.md — een eigen tabel, los van die van PIPS OUT.        */
     url: '',
     key: '',
-    table: 'scores',
+    table: 'scores_ballenraper',
 
     /* Welk spel deze scores zijn. Wordt meegestuurd bij het opslaan
        en gebruikt om de juiste ranglijst op te halen.               */

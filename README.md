@@ -56,33 +56,47 @@ Dan naar <http://localhost:8130>.
 Werkt precies zoals bij PIPS OUT!: zolang `config.js` geen sleutels bevat, houdt het spel
 de lijst bij op het toestel zelf. Er gaat dus niets stuk zolang dit niet ingesteld is.
 
-**Let op — vóór dit live gaat**, moet de bestaande `scores`-tabel een kolom `game` krijgen,
-anders komen deze scores in de ranglijst van PIPS OUT! terecht:
+Dit spel krijgt zijn **eigen tabel**, los van die van PIPS OUT!. Dat is minder werk en
+vooral: er wordt niets aangeraakt aan de tabel die de ranglijst van PIPS OUT! al bedient.
+PIPS OUT! hoeft dus ook niet aangepast te worden.
+
+Plak dit in de SQL Editor van hetzelfde Supabase-project:
 
 ```sql
-alter table public.scores add column game text not null default 'pipsout';
-create index scores_game_score_idx on public.scores (game, score desc);
+create table public.scores_ballenraper (
+  id         bigint generated always as identity primary key,
+  name       text        not null,
+  score      integer     not null,
+  level      integer     not null,
+  ts         bigint      not null,
+  game       text        not null default 'ballenraper',
+  created_at timestamptz not null default now()
+);
 
--- de insert-policy opnieuw zetten, nu met game erbij
-drop policy "score toevoegen" on public.scores;
+create index scores_ballenraper_score_idx on public.scores_ballenraper (score desc);
+
+alter table public.scores_ballenraper enable row level security;
+
+-- iedereen mag de ranglijst lezen
+create policy "ranglijst lezen"
+  on public.scores_ballenraper for select to anon
+  using (true);
+
+-- iedereen mag een score toevoegen, maar geen onzin
 create policy "score toevoegen"
-  on public.scores for insert to anon
+  on public.scores_ballenraper for insert to anon
   with check (
     char_length(btrim(name)) between 1 and 16
     and level between 1 and 99
     and score >= 0
-    and game in ('pipsout', 'ballenraper')
-    and score <= case game
-          when 'pipsout'     then 30000 * level * (level + 1)
-          else                    12000 * level * (level + 1)
-        end
+    and score <= 12000 * level * (level + 1)
   );
 ```
 
-Daarna in `config.js` de Project URL en de publishable key invullen. `board.js` stuurt
-`game` mee bij het opslaan en filtert erop bij het ophalen, dus beide spellen delen
-dezelfde tabel zonder elkaars lijst te vullen.
+Net als bij PIPS OUT! staat er bewust **geen** update- of delete-policy: scores kunnen
+toegevoegd en gelezen worden, maar niet gewijzigd of gewist. `level` is hier het aantal
+tafels dat je gehaald hebt.
 
-PIPS OUT! heeft dan ook de nieuwere `board.js` nodig, die `game` meestuurt — anders komen
-die scores binnen zonder spelnaam en vallen ze door de `default 'pipsout'` toevallig goed,
-maar filtert het oude spel er niet op.
+Daarna in `config.js` de Project URL en de publishable key invullen, en pushen. De kolom
+`game` staat er al in, zodat er later makkelijk één gezamenlijke ranglijst over alle
+clubspellen gemaakt kan worden met een `union`.
