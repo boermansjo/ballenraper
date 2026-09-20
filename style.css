@@ -252,6 +252,7 @@ body{
 .dot.orange{ background:#ef7d18; }
 .dot.green{ background:#1f7a4a; border-radius:3px; }
 .dot.blue{ background:#25406e; }
+.dot.deur{ background:#1a1220; border:2px solid #d9a441; border-radius:3px; box-shadow:0 0 6px rgba(255,205,120,.6); }
 .fineprint{ font-size:8px; line-height:1.9; color:#9dc0e0; max-width:320px; }
 
 .clear-rows{ font-size:10px; width:min(280px,90%); display:flex; flex-direction:column; gap:9px; }

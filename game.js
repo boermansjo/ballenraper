@@ -111,6 +111,10 @@ const Snd = {
     const f = this.ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 500;
     s.connect(f); this.env(f, 0.25, 0.2); s.start(); s.stop(this.ac.currentTime + 0.2);
   },
+  door(){
+    this.tone('sine', 320, 1000, 0.10, 0.18);
+    this.tone('sine', 640, 1500, 0.06, 0.22, 0.05);
+  },
   dead(){ [392, 330, 262, 196].forEach((f, i) => this.tone('square', f, null, 0.1, 0.42, i * 0.16)); }
 };
 
@@ -121,7 +125,7 @@ const G = {
   screen: 'title',
   snake: [], dir: { x: 0, y: -1 }, queue: [],
   balls: 0, score: 0, lives: 3,
-  tables: [], mates: [],
+  tables: [], mates: [], doors: [], doorFx: 0,
   food: null, gold: null,
   step: 150,
   grow: 0, invuln: 0, waiting: true, frac: 0, grew: false,
@@ -158,6 +162,7 @@ function freeCell(){
     const x = (Math.random() * COLS) | 0;
     const y = (Math.random() * ROWS) | 0;
     if (blocked(x, y)) continue;
+    if (doorAt(x, y)) continue;
     if (G.food && G.food.x === x && G.food.y === y) continue;
     if (G.gold && G.gold.x === x && G.gold.y === y) continue;
     // niet pal voor de neus laten verschijnen
@@ -177,6 +182,52 @@ function freeCell(){
   return null;
 }
 
+/* ---------- de cellen recht vóór je, die blijven vrij ---------- */
+function baanVoorJe(){
+  const set = new Set();
+  const kop = G.snake[0];
+  if (!kop) return set;
+  for (let k = 0; k <= 6; k++){
+    const bx = kop.x + G.dir.x * k, by = kop.y + G.dir.y * k;
+    for (let ox = -1; ox <= 1; ox++)
+      for (let oy = -1; oy <= 1; oy++)
+        set.add((bx + ox) + ',' + (by + oy));
+  }
+  return set;
+}
+
+/* ---------- twee deuren van de zaal ----------
+   Vanaf drie tafels staan er twee deuren open: rij je de ene binnen,
+   dan kom je de andere uit. Ze verhuizen bij elke nieuwe tafel. */
+function doorAt(x, y){ return G.doors.find(d => d.x === x && d.y === y); }
+
+function placeDoors(){
+  G.doors = [];
+  if (G.tables.length < 3) return;
+  const verboden = baanVoorJe();
+  const gekozen = [];
+  for (let n = 0; n < 2; n++){
+    for (let tries = 0; tries < 400; tries++){
+      const x = 1 + ((Math.random() * (COLS - 2)) | 0);
+      const y = 1 + ((Math.random() * (ROWS - 2)) | 0);
+      if (blocked(x, y)) continue;
+      if (verboden.has(x + ',' + y)) continue;
+      if (G.food && G.food.x === x && G.food.y === y) continue;
+      // ver genoeg uit elkaar, anders heb je er niets aan
+      if (gekozen.some(d => Math.abs(d.x - x) + Math.abs(d.y - y) < 9)) continue;
+      // niet tegen een tafel aan geplakt
+      let vrij = true;
+      for (let ox = -1; ox <= 1 && vrij; ox++)
+        for (let oy = -1; oy <= 1 && vrij; oy++)
+          if (blocked(x + ox, y + oy, { skipSnake: true, skipMates: true }) === 'tafel') vrij = false;
+      if (!vrij) continue;
+      gekozen.push({ x, y });
+      break;
+    }
+  }
+  if (gekozen.length === 2) G.doors = gekozen;   // half werk heeft geen zin
+}
+
 /* ---------- een tafel erbij ---------- */
 function addTable(){
   if (G.tables.length >= 8) return false;
@@ -184,16 +235,7 @@ function addTable(){
   /* De baan recht voor je blijft vrij. Anders plooit iemand een tafel
      open op de plek waar jij net naartoe reed, en dan is het hartje weg
      voor je iets kan doen. */
-  const verboden = new Set();
-  const kop = G.snake[0];
-  if (kop){
-    for (let k = 0; k <= 6; k++){
-      const bx = kop.x + G.dir.x * k, by = kop.y + G.dir.y * k;
-      for (let ox = -1; ox <= 1; ox++)
-        for (let oy = -1; oy <= 1; oy++)
-          verboden.add((bx + ox) + ',' + (by + oy));
-    }
-  }
+  const verboden = baanVoorJe();
 
   for (let tries = 0; tries < 300; tries++){
     const w = 4, h = 2;
@@ -262,7 +304,7 @@ function resetSnake(){
 
 function startGame(){
   G.balls = 0; G.score = 0; G.lives = 3;
-  G.tables = []; G.mates = [];
+  G.tables = []; G.mates = []; G.doors = [];
   G.food = null; G.gold = null;
   G.parts = []; G.texts = [];
   G.step = 150;
@@ -305,6 +347,7 @@ function eat(gold){
 function newTable(){
   if (!addTable()) return;
   syncMates();
+  placeDoors();
   const bonus = 100 * G.tables.length;
   G.score += bonus;
   bumpScore();
@@ -363,21 +406,33 @@ function tick(){
   const head = G.snake[0];
   const nx = head.x + G.dir.x, ny = head.y + G.dir.y;
 
+  // een deur in? dan kom je bij de andere weer buiten
+  let tx = nx, ty = ny;
+  const deur = doorAt(nx, ny);
+  if (deur){
+    const uit = G.doors.find(d => d !== deur);
+    tx = uit.x; ty = uit.y;
+    G.doorFx = 1;
+    burst(deur, '#ffd98a', 10);
+    burst(uit, '#ffd98a', 10);
+    Snd.door();
+  }
+
   // vlak na een herstart lopen clubgenoten even door je heen
-  const hit = blocked(nx, ny, { ignoreTail: G.grow === 0, skipMates: G.invuln > 0 });
+  const hit = blocked(tx, ty, { ignoreTail: G.grow === 0, skipMates: G.invuln > 0 });
   if (hit){ crash(hit); return; }
 
-  G.snake.unshift({ x: nx, y: ny });
+  G.snake.unshift({ x: tx, y: ty });
   G.grew = G.grow > 0;
   if (G.grow > 0) G.grow--; else G.snake.pop();
 
-  if (G.food && G.food.x === nx && G.food.y === ny) eat(false);
-  else if (G.gold && G.gold.x === nx && G.gold.y === ny) eat(true);
+  if (G.food && G.food.x === tx && G.food.y === ty) eat(false);
+  else if (G.gold && G.gold.x === tx && G.gold.y === ty) eat(true);
 
   moveMates();
   if (G.invuln <= 0){
     for (const m of G.mates){
-      if (m.x === nx && m.y === ny){ crash('clubgenoot'); return; }
+      if (m.x === tx && m.y === ty){ crash('clubgenoot'); return; }
     }
   }
 }
@@ -530,6 +585,37 @@ function drawBall(cx, cy, r, col, ring){
   }
 }
 
+function drawDoor(d, now){
+  const cx = d.x * CELL + CELL / 2, cy = d.y * CELL + CELL / 2;
+  const puls = 0.5 + 0.5 * Math.sin(now * 0.004 + d.x);
+  const open = 0.35 + puls * 0.3 + G.doorFx * 0.5;
+
+  // schijnsel op de vloer
+  ctx.save();
+  ctx.globalAlpha = 0.25 + puls * 0.2 + G.doorFx * 0.4;
+  const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, 17);
+  g.addColorStop(0, 'rgba(255,214,140,.9)'); g.addColorStop(1, 'rgba(255,190,90,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 17, 0, 7); ctx.fill();
+  ctx.restore();
+
+  // een open deur met het licht van de gang erachter
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(cx - 8.5, cy - 9.5, 17, 19, 3);
+  const dg = ctx.createLinearGradient(cx - 6, cy - 9, cx + 6, cy + 9);
+  dg.addColorStop(0, '#fff3cf');
+  dg.addColorStop(.5, '#ffd98a');
+  dg.addColorStop(1, '#f0a63a');
+  ctx.fillStyle = dg; ctx.fill();
+  // de deurstijl
+  ctx.strokeStyle = '#3d2712'; ctx.lineWidth = 3.5; ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,240,200,.5)'; ctx.lineWidth = 1; ctx.stroke();
+  // de donkere gang die je in rijdt
+  ctx.globalAlpha = 0.35 + (1 - open) * 0.3;
+  ctx.beginPath(); ctx.ellipse(cx, cy, 4.2, 7.5, 0, 0, 7);
+  ctx.fillStyle = '#4a2f12'; ctx.fill();
+  ctx.restore();
+}
+
 function drawMate(m){
   let gx = m.x, gy = m.y;
   if (m.moved && !G.waiting){        // glijdt van de vorige cel naar deze
@@ -568,6 +654,11 @@ function tubePoints(){
   for (let i = 1; i < n; i++){
     const a = mid(G.snake[i]);
     if (i === n - 1 && G.grew){ pts[i] = a; continue; }
+    // net door een deur: dan liggen twee stukken ver uit elkaar,
+    // en mag er niets tussen geschoven of getekend worden
+    const sprong = Math.abs(G.snake[i].x - G.snake[i - 1].x) +
+                   Math.abs(G.snake[i].y - G.snake[i - 1].y) > 1;
+    if (sprong){ pts[i] = a; continue; }
     const b = mid(G.snake[i - 1]);
     pts[i] = { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
   }
@@ -577,7 +668,12 @@ function tubePoints(){
 function strokeThrough(pts, width, style){
   ctx.beginPath();
   ctx.moveTo(pts[0].x, pts[0].y);
-  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+  for (let i = 1; i < pts.length; i++){
+    const ver = Math.abs(pts[i].x - pts[i - 1].x) > CELL * 1.6 ||
+                Math.abs(pts[i].y - pts[i - 1].y) > CELL * 1.6;
+    if (ver){ ctx.moveTo(pts[i].x, pts[i].y); ctx.lineTo(pts[i].x, pts[i].y); }
+    else ctx.lineTo(pts[i].x, pts[i].y);
+  }
   if (pts.length === 1) ctx.lineTo(pts[0].x, pts[0].y);
   ctx.lineWidth = width;
   ctx.strokeStyle = style;
@@ -699,6 +795,7 @@ function render(now){
              ['#ffd08a', '#ef7d18'], pulse);
   }
 
+  for (const d of G.doors) drawDoor(d, now);
   for (const m of G.mates) drawMate(m);
   drawSnake();
 
@@ -768,6 +865,7 @@ function frame(){
   G.flash = Math.max(0, G.flash - dt * 3.5);
   G.suck   = Math.max(0, G.suck   - dt * 5);
   G.turnFx = Math.max(0, G.turnFx - dt * 6);
+  G.doorFx = Math.max(0, G.doorFx - dt * 2.5);
   if (G.invuln > 0) G.invuln = Math.max(0, G.invuln - dt);
 
   if (G.screen === 'play' && !G.waiting){

@@ -16,6 +16,8 @@ dan in de zaal: jij raapt de ballen op en de ballenbuis achter je wordt almaar l
 - 🟩 **Tafels** — om de 8 ballen plooit iemand er eentje open. Hoe voller de zaal, hoe krapper.
   Nooit vlak voor je neus: de baan recht vóór je blijft vrij.
 - 🔵 **Clubgenoten** — die wandelen dwars door de zaal en kijken niet uit.
+- 🚪 **Deuren** — vanaf drie tafels staan er twee open. Rij de ene binnen en je komt de
+  andere uit, in dezelfde richting. Ze verhuizen bij elke nieuwe tafel.
 
 Tegen jezelf, een tafel, een clubgenoot of de zijlijn kost een hartje. Drie hartjes en de
 training zit erop. Na afloop zet je je naam bij je score en kom je in de erelijst.
