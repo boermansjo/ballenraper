@@ -15,12 +15,29 @@ const W = COLS * CELL, H = ROWS * CELL;      // 440 x 520
    veilig kan herstarten na een botsing */
 const SAFE = { x0: 8, y0: 10, x1: 13, y1: 16 };
 
+/* De buis houdt vierentwintig ballen, net als het echte ding. Vol is vol:
+   wat er daarna nog binnenkomt, ketst eraf. Leeg is BASIS lang. */
+const BUIS  = 24;
+const BASIS = 3;
+
+/* Hoe rap de buis vooruitschuift, in milliseconden per cel. TRAAGSTE is
+   de start, RAPSTE is het plafond, en per geraapte bal gaat er PER_BAL
+   af. Dit zijn de drie knoppen voor het speeltempo; ze staan nergens
+   anders in de code. Het plafond wordt bereikt na (TRAAGSTE - RAPSTE) /
+   PER_BAL ballen — en omdat je met de kar veel langer doorspeelt dan
+   vroeger, zit je daar het grootste deel van een partij. */
+const TRAAGSTE = 155;
+const RAPSTE   = 95;
+const PER_BAL  = 1.2;
+const tempo = () => Math.max(RAPSTE, TRAAGSTE - G.balls * PER_BAL);
+
 const cv  = document.getElementById('game');
 const ctx = cv.getContext('2d');
 
 const $ = id => document.getElementById(id);
 const el = {
-  ballCount: $('ballCount'), scoreDigits: $('scoreDigits'), hearts: $('hearts'),
+  ballCount: $('ballCount'), buisFill: $('buisFill'),
+  scoreDigits: $('scoreDigits'), hearts: $('hearts'),
   levelTag: $('levelTag'), tickText: $('tickText'), mute: $('mute'),
   title: $('screen-title'), how: $('screen-how'), table: $('screen-table'),
   over: $('screen-over'), board: $('screen-board'),
@@ -44,7 +61,12 @@ const HEADLINES = [
   'Materiaalcommissie telt de ballen. Er ontbreken er zeventien.',
   'Kantine sluit pas als de laatste bal geraapt is. Kantine sluit laat.',
   'Clubgenoot wandelt dwars door de zaal, ziet niemand, groet niemand.',
-  'Nieuwe regel: wie het laatst klaar is, plooit de tafels.'
+  'Nieuwe regel: wie het laatst klaar is, plooit de tafels.',
+  'Celluloid bal uit 1987 gevonden achter de radiator. Museum belt niet terug.',
+  'Trainer fluit. Niemand weet waarvoor, iedereen loopt rapper.',
+  'Ballenkar staat nooit waar je ze gelaten hebt. Onderzoek loopt.',
+  'Speler leegt buis naast de kar in plaats van erin. Mag herbeginnen.',
+  'Materiaalploeg vraagt tweede ballenkar. Bestuur vraagt eerst de rekening.'
 ];
 
 const TABLE_QUIPS = [
@@ -123,7 +145,36 @@ const Snd = {
     this.tone('sine', 320, 1000, 0.10, 0.18);
     this.tone('sine', 640, 1500, 0.06, 0.22, 0.05);
   },
-  dead(){ [392, 330, 262, 196].forEach((f, i) => this.tone('square', f, null, 0.1, 0.42, i * 0.16)); }
+  dead(){ [392, 330, 262, 196].forEach((f, i) => this.tone('square', f, null, 0.1, 0.42, i * 0.16)); },
+
+  /* het fluitje van de trainer: twee korte stoten, hoog en scherp */
+  fluit(){
+    [0, 0.17].forEach(d => {
+      this.tone('square', 2100, 2500, 0.05, 0.13, d);
+      this.tone('square', 3150, 3600, 0.02, 0.13, d);
+    });
+  },
+
+  /* de buis in de kar leeggieten: een ratelende stroom balletjes */
+  dump(){
+    if (!this.on) return; this.init(); if (!this.ac) return;
+    const s = this.ac.createBufferSource(); s.buffer = this.noise;
+    s.playbackRate.value = 0.6;
+    const f = this.ac.createBiquadFilter();
+    f.type = 'bandpass'; f.frequency.value = 1400; f.Q.value = 1.2;
+    s.connect(f); this.env(f, 0.24, 0.45);
+    s.start(); s.stop(this.ac.currentTime + 0.45);
+    [523, 659, 784, 1047].forEach((n, i) => this.tone('triangle', n, null, 0.07, 0.2, i * 0.07));
+  },
+
+  /* een bal die uit een volle buis ketst */
+  spill(){
+    [220, 180].forEach((n, i) => this.tone('triangle', n, n * 0.7, 0.1, 0.12, i * 0.09));
+  },
+
+  celluloid(){
+    [784, 988, 1175, 1568, 2093].forEach((n, i) => this.tone('sine', n, null, 0.07, 0.22, i * 0.05));
+  }
 };
 
 /* ============================================================
@@ -134,8 +185,10 @@ const G = {
   snake: [], dir: { x: 0, y: -1 }, queue: [],
   balls: 0, score: 0, lives: 3, level: 1,
   tables: [], barriers: [], mates: [], doors: [], doorFx: 0,
-  food: null, gold: null,
-  step: 150,
+  food: null, gold: null, cell: null,
+  kar: null, inBuis: 0, karFx: 0,
+  fluit: 0, fluitIn: 20,
+  step: TRAAGSTE,
   grow: 0, invuln: 0, waiting: true, frac: 0, grew: false,
   suck: 0, turnFx: 0,
   parts: [], texts: [], shake: 0, flash: 0,
@@ -168,14 +221,68 @@ function blocked(x, y, opts){
   return null;
 }
 
+/* ---------- de ballenkar ----------
+   Twee bij twee cellen, en je rijdt er gewoon in: ze houdt je niet tegen,
+   ze neemt je buis over. Na elke lossing rolt iemand ze ergens anders. */
+function karAt(x, y){
+  return !!G.kar && x >= G.kar.x && x < G.kar.x + 2 && y >= G.kar.y && y < G.kar.y + 2;
+}
+function karZone(x, y){
+  return !!G.kar && x >= G.kar.x - 1 && x <= G.kar.x + 2 &&
+                    y >= G.kar.y - 1 && y <= G.kar.y + 2;
+}
+
+function placeKar(){
+  const verboden = baanVoorJe();
+  const kop = G.snake[0] || { x: (COLS / 2) | 0, y: (ROWS / 2) | 0 };
+
+  for (let tries = 0; tries < 500; tries++){
+    const x = 1 + ((Math.random() * (COLS - 3)) | 0);
+    const y = 1 + ((Math.random() * (ROWS - 3)) | 0);
+
+    // het midden blijft leeg, daar herstart je
+    if (x < SAFE.x1 && x + 2 > SAFE.x0 && y < SAFE.y1 && y + 2 > SAFE.y0) continue;
+    // ver genoeg weg, anders is het geen ritje
+    if (Math.abs(kop.x - x) + Math.abs(kop.y - y) < 6) continue;
+
+    let ok = true;
+    // een cel speling rond de kar, zodat je er altijd aan kan
+    for (let yy = y - 1; yy <= y + 2 && ok; yy++){
+      for (let xx = x - 1; xx <= x + 2 && ok; xx++){
+        const wat = blocked(xx, yy, { skipSnake: true, skipMates: true });
+        if (wat === 'tafel' || wat === 'omheining') ok = false;
+      }
+    }
+    if (!ok) continue;
+
+    for (let yy = y; yy < y + 2 && ok; yy++){
+      for (let xx = x; xx < x + 2 && ok; xx++){
+        if (blocked(xx, yy, { skipMates: true })) ok = false;
+        else if (verboden.has(xx + ',' + yy)) ok = false;
+        else if (doorAt(xx, yy)) ok = false;
+        else if (G.food && G.food.x === xx && G.food.y === yy) ok = false;
+        else if (G.gold && G.gold.x === xx && G.gold.y === yy) ok = false;
+        else if (G.cell && G.cell.x === xx && G.cell.y === yy) ok = false;
+      }
+    }
+    if (!ok) continue;
+
+    G.kar = { x, y };
+    return true;
+  }
+  return false;                    // geen plek: de kar blijft staan waar ze staat
+}
+
 function freeCell(){
   for (let tries = 0; tries < 400; tries++){
     const x = (Math.random() * COLS) | 0;
     const y = (Math.random() * ROWS) | 0;
     if (blocked(x, y)) continue;
     if (doorAt(x, y)) continue;
+    if (karAt(x, y)) continue;
     if (G.food && G.food.x === x && G.food.y === y) continue;
     if (G.gold && G.gold.x === x && G.gold.y === y) continue;
+    if (G.cell && G.cell.x === x && G.cell.y === y) continue;
     // niet pal voor de neus laten verschijnen
     const h = G.snake[0];
     if (h && Math.abs(h.x - x) + Math.abs(h.y - y) < 3) continue;
@@ -187,6 +294,7 @@ function freeCell(){
       if (blocked(x, y)) continue;
       if (G.food && G.food.x === x && G.food.y === y) continue;
       if (G.gold && G.gold.x === x && G.gold.y === y) continue;
+      if (G.cell && G.cell.x === x && G.cell.y === y) continue;
       return { x, y };
     }
   }
@@ -243,6 +351,7 @@ function placeDoors(){
       const x = kand.x, y = kand.y;
       if (blocked(x, y)) continue;
       if (verboden.has(x + ',' + y)) continue;
+      if (karZone(x, y)) continue;
       if (G.food && G.food.x === x && G.food.y === y) continue;
       // ver genoeg uit elkaar, anders heb je er niets aan
       if (gekozen.some(d => Math.abs(d.x - x) + Math.abs(d.y - y) < 9)) continue;
@@ -286,6 +395,7 @@ function addTable(){
       for (let xx = x - 1; xx <= x + w && ok; xx++){
         const wat = blocked(xx, yy, { skipMates: true });
         if (wat === 'tafel' || wat === 'omheining') ok = false;
+        else if (karZone(xx, yy)) ok = false;         // de kar blijft bereikbaar
       }
     }
     if (!ok) continue;
@@ -326,6 +436,7 @@ function addBarrier(){
       for (let xx = x - 1; xx <= x + w && ok; xx++){
         const wat = blocked(xx, yy, { skipSnake: true, skipMates: true });
         if (wat === 'tafel' || wat === 'omheining') ok = false;      // speling errond
+        else if (karZone(xx, yy)) ok = false;                        // en van de kar
       }
     }
     if (!ok) continue;
@@ -383,18 +494,23 @@ function resetSnake(){
   G.dir = { x: 0, y: -1 };
   G.queue = [];
   G.grow = 0;
+  G.inBuis = 0;            // wat erin zat, ligt nu over de vloer
   G.invuln = 1.6;
   G.waiting = true;        // pas vertrekken als de speler zelf stuurt
+  bumpBuis();
 }
 
 function startGame(){
   G.balls = 0; G.score = 0; G.lives = 3; G.level = 1;
   G.tables = []; G.barriers = []; G.mates = []; G.doors = [];
-  G.food = null; G.gold = null;
+  G.food = null; G.gold = null; G.cell = null;
+  G.kar = null; G.inBuis = 0; G.karFx = 0;
+  G.fluit = 0; G.fluitIn = 20;
   G.parts = []; G.texts = [];
-  G.step = 150;
+  G.step = TRAAGSTE;
   resetSnake();
   addTable();
+  placeKar();
   G.food = freeCell();
   drawHearts(); bumpScore(); bumpBalls();
   show('play');
@@ -402,31 +518,107 @@ function startGame(){
 
 function spawnFood(){
   G.food = freeCell();
-  if (!G.gold && Math.random() < 0.2){
+  if (G.gold || G.cell) return;
+  /* Een celluloid bal is zeldzaam: die lag al jaren achter de radiator. */
+  if (Math.random() < 0.06){
+    const c = freeCell();
+    if (c){ G.cell = c; G.cell.life = 13; }
+  } else if (Math.random() < 0.2){
     const g = freeCell();
     if (g){ G.gold = g; G.gold.life = 9; }
   }
 }
 
-function eat(gold){
+/* Punten lopen dubbel zolang de trainer fluit. Geeft terug wat er
+   effectief bijkwam, zodat het zwevende tekstje niet liegt. */
+function punten(n){
+  const p = n * (G.fluit > 0 ? 2 : 1);
+  G.score += p;
+  return p;
+}
+
+function eat(soort){
   G.suck = 1;
-  if (gold){
-    G.score += 50;
+
+  if (soort === 'ster'){
     G.gold = null;
-    addText('+50', '#ffb43f');
+    addText('+' + punten(50), '#ffb43f');
     Snd.gold();
+    bumpScore();
+    return;                         // een 3-sterren bal gooi je in je zak, niet in je buis
+  }
+
+  if (soort === 'bal' && G.inBuis >= BUIS){
+    /* De buis zit vol. De bal ketst eraf en rolt de zaal weer in: geen
+       punten, geen groei. Rij naar de kar, dat is de hele boodschap. */
+    spawnFood();
+    addText('BUIS VOL!', '#ff9a8a');
+    spill();
+    Snd.spill();
+    return;
+  }
+
+  if (soort === 'celluloid'){
+    G.cell = null;
+    G.balls++;
+    bumpBalls();
+    addText('CELLULOID +' + punten(150), '#ffe9a8');
+    Snd.celluloid();
+    // ze neemt plaats voor drie: zoveel als er nog in kan
+    const erin = Math.min(3, BUIS - G.inBuis);
+    G.inBuis += erin; G.grow += erin;
+    if (erin < 3){ addText('BUIS VOL!', '#ff9a8a', -13); spill(); }
   } else {
     G.balls++;
-    G.score += 10;
+    G.inBuis++;
     G.grow += 1;
+    punten(10);
     bumpBalls();
     Snd.pick(G.snake.length);
     spawnFood();
-
-    if (G.balls % 8 === 0) newTable();
   }
+
+  bumpBuis();
   bumpScore();
-  G.step = Math.max(75, 150 - G.balls * 2);
+  G.step = tempo();
+  if (G.balls % 8 === 0) newTable();
+}
+
+/* een bal die uit de volle buis achteraan naar buiten rolt */
+function spill(){
+  const t = G.snake[G.snake.length - 1];
+  if (t) burst(t, '#f4f7fa', 9);
+}
+
+/* ---------- de buis in de kar leeggieten ----------
+   Twintig punten per bal, en tweehonderdvijftig extra als ze vol was.
+   Vandaar het hele spel: hoe langer je doorgaat, hoe meer het opbrengt
+   en hoe langer en onhandiger je wordt. */
+function dumpBuis(){
+  if (G.inBuis <= 0) return;
+  const n = G.inBuis, vol = n >= BUIS;
+  const bonus = punten(20 * n + (vol ? 250 : 0));
+
+  G.inBuis = 0;
+  G.grow = 0;
+  while (G.snake.length > BASIS) G.snake.pop();
+  G.queue.length = 0;
+
+  addText('+' + bonus, vol ? '#ffd23f' : '#9ef0b4');
+  if (vol) addText('VOLLE BUIS!', '#ffd23f', -13);
+  G.karFx = 1;
+  burst({ x: G.kar.x + 0.5, y: G.kar.y + 0.5 }, '#f4f7fa', 20);
+  Snd.dump();
+  bumpScore(); bumpBuis();
+  placeKar();                        // iemand rolt de kar ergens anders
+}
+
+/* ---------- het fluitje van de trainer ---------- */
+function startFluit(){
+  G.fluit = 5;
+  addText('TRAINER FLUIT — DUBBELE PUNTEN', '#ffe37a');
+  Snd.fluit();
+  setTag();
 }
 
 /* Elke acht ballen komt er iets bij. Eerst worden de tafels opengeplooid;
@@ -441,8 +633,7 @@ function newTable(){
   syncMates();
   placeDoors();
 
-  const bonus = 100 * G.level;
-  G.score += bonus;
+  const bonus = punten(100 * G.level);
   bumpScore();
 
   el.tableTitle.textContent = soort === 'tafel' ? 'TAFEL ERBIJ' : 'OMHEINING ERBIJ';
@@ -464,6 +655,7 @@ function crash(reason){
 
   if (G.lives <= 0){ gameOver(reason); return; }
   addText(reason.toUpperCase(), '#ff9a8a');
+  if (G.inBuis >= 6) addText(G.inBuis + ' BALLEN OVER DE VLOER', '#ffb0a0', -13);
   resetSnake();
 }
 
@@ -537,8 +729,12 @@ function tick(){
   G.grew = G.grow > 0;
   if (G.grow > 0) G.grow--; else G.snake.pop();
 
-  if (G.food && G.food.x === tx && G.food.y === ty) eat(false);
-  else if (G.gold && G.gold.x === tx && G.gold.y === ty) eat(true);
+  if (G.food && G.food.x === tx && G.food.y === ty) eat('bal');
+  else if (G.gold && G.gold.x === tx && G.gold.y === ty) eat('ster');
+  else if (G.cell && G.cell.x === tx && G.cell.y === ty) eat('celluloid');
+
+  // de kar houdt je niet tegen, ze neemt je buis over
+  if (karAt(tx, ty)) dumpBuis();
 
   moveMates();
   if (G.invuln <= 0){
@@ -556,11 +752,21 @@ function show(name){
   for (const k of ['title', 'how', 'table', 'over', 'board']) el[k].classList.add('hidden');
   if (el[name]) el[name].classList.remove('hidden');
   el.levelTag.classList.toggle('hidden', name !== 'play');
-  if (name === 'play'){
-    el.levelTag.textContent = G.barriers.length
-      ? G.tables.length + ' TAFELS  ·  ' + G.barriers.length + ' OMHEININGEN'
-      : G.tables.length + ' TAFELS IN DE ZAAL';
+  if (name === 'play') setTag();
+}
+
+/* het bandje bovenaan: normaal wat er in de zaal staat, en zolang de
+   trainer fluit wat er dan te halen valt */
+function setTag(){
+  if (G.fluit > 0){
+    el.levelTag.classList.add('fluit');
+    el.levelTag.textContent = 'TRAINER FLUIT  ·  DUBBELE PUNTEN';
+    return;
   }
+  el.levelTag.classList.remove('fluit');
+  el.levelTag.textContent = G.barriers.length
+    ? G.tables.length + ' TAFELS  ·  ' + G.barriers.length + ' OMHEININGEN'
+    : G.tables.length + ' TAFELS IN DE ZAAL';
 }
 
 function bumpScore(){
@@ -573,6 +779,14 @@ function bumpScore(){
   el.scoreDigits.classList.add('bump');
 }
 function bumpBalls(){ el.ballCount.textContent = String(G.balls).padStart(3, '0'); }
+
+/* de meter naast je ballenteller: hoe vol de buis zit */
+function bumpBuis(){
+  const v = Math.min(1, G.inBuis / BUIS);
+  el.buisFill.style.width = (v * 100).toFixed(1) + '%';
+  el.buisFill.classList.toggle('warn', v >= 0.7 && v < 1);
+  el.buisFill.classList.toggle('crit', v >= 1);
+}
 
 function drawHearts(){
   el.hearts.innerHTML = '';
@@ -591,9 +805,9 @@ function burst(c, col, n){
                    life: 0.5 + Math.random() * 0.4, max: 0.9, size: 2 + Math.random() * 3, col });
   }
 }
-function addText(t, col){
+function addText(t, col, dy){
   const h = G.snake[0];
-  G.texts.push({ x: h.x * CELL + CELL / 2, y: h.y * CELL - 6, t, col, life: 1 });
+  G.texts.push({ x: h.x * CELL + CELL / 2, y: h.y * CELL - 6 + (dy || 0), t, col, life: 1 });
 }
 
 /* ============================================================
@@ -744,6 +958,86 @@ function drawBarrier(b){
   }
 }
 
+/* De ballenkar: een mand op wieltjes, met de ballen die de rest van de
+   club er al in gekieperd heeft. Twee bij twee cellen, dus veertig bij
+   veertig pixels om mee te werken. */
+function drawKar(now){
+  if (!G.kar) return;
+  const x = G.kar.x * CELL, y = G.kar.y * CELL, s = CELL * 2;
+  const cx = x + s / 2;
+
+  // een ring die pulseert zolang er iets te lossen valt
+  if (G.inBuis > 0){
+    const vol = G.inBuis >= BUIS;
+    const p = 0.5 + 0.5 * Math.sin(now * 0.005);
+    ctx.save();
+    ctx.globalAlpha = 0.22 + p * 0.3;
+    ctx.beginPath(); ctx.arc(cx, y + s / 2, s * 0.6 + p * 3, 0, 7);
+    ctx.strokeStyle = vol ? '#ffd23f' : '#9ef0b4';
+    ctx.lineWidth = vol ? 3 : 2;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // schaduw
+  ctx.fillStyle = 'rgba(25,14,4,.35)';
+  ctx.beginPath(); ctx.ellipse(cx, y + s - 4, s * 0.4, 4.5, 0, 0, 7); ctx.fill();
+
+  // de ballen die er al in liggen, net boven de rand
+  for (const b of [[-9, 2], [0, -1], [9, 2], [-4, 5], [5, 5]]){
+    const bx = cx + b[0], by = y + 9 + b[1];
+    const g = ctx.createRadialGradient(bx - 1.6, by - 2, 0.8, bx, by, 5.4);
+    g.addColorStop(0, '#ffffff'); g.addColorStop(.75, '#eef2f6'); g.addColorStop(1, '#bcc6d1');
+    ctx.beginPath(); ctx.arc(bx, by, 5.2, 0, 7); ctx.fillStyle = g; ctx.fill();
+  }
+
+  /* de mand: onderaan wat smaller, zoals elke kar in elke zaal. De vorm
+     wordt drie keer gebruikt, dus ze staat apart: vullen, vlechten en de
+     flits na het lossen tekenen alle drie hetzelfde pad. */
+  const top = y + 8, bot = y + s - 6;
+  const mand = () => {
+    ctx.beginPath();
+    ctx.moveTo(x + 3, top); ctx.lineTo(x + s - 3, top);
+    ctx.lineTo(x + s - 7, bot); ctx.lineTo(x + 7, bot);
+    ctx.closePath();
+  };
+
+  const g = ctx.createLinearGradient(0, top, 0, bot);
+  g.addColorStop(0, 'rgba(58,128,204,.85)');
+  g.addColorStop(1, 'rgba(15,47,94,.95)');
+  ctx.save();
+  mand();
+  ctx.fillStyle = g; ctx.fill();
+
+  // het vlechtwerk van de mand, netjes binnen de rand
+  ctx.clip();
+  ctx.strokeStyle = 'rgba(190,220,245,.35)'; ctx.lineWidth = 1;
+  for (let i = -s; i < s * 2; i += 6){
+    ctx.beginPath(); ctx.moveTo(x + i, bot); ctx.lineTo(x + i + 14, top); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + i, top); ctx.lineTo(x + i + 14, bot); ctx.stroke();
+  }
+  ctx.restore();
+
+  mand();
+  ctx.strokeStyle = '#cfe0ee'; ctx.lineWidth = 2; ctx.stroke();
+
+  // de wieltjes
+  ctx.fillStyle = '#12233c';
+  for (const wx of [x + 10, x + s - 10]){
+    ctx.beginPath(); ctx.arc(wx, bot + 3, 3.2, 0, 7); ctx.fill();
+  }
+
+  // net geleegd: even een witte flits
+  if (G.karFx > 0){
+    ctx.save();
+    ctx.globalAlpha = G.karFx * 0.55;
+    ctx.fillStyle = '#ffffff';
+    mand();
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
 function drawDoor(d, now){
   const cx = d.x * CELL + CELL / 2, cy = d.y * CELL + CELL / 2;
   const puls = 0.5 + 0.5 * Math.sin(now * 0.004 + d.x);
@@ -875,8 +1169,14 @@ function drawSnake(){
     ctx.fillStyle = g; ctx.fill();
   }
 
-  // en daar gaat het doorschijnende plastic overheen
-  strokeThrough(pts, 16, 'rgba(198,224,244,.26)');
+  /* en daar gaat het doorschijnende plastic overheen. Hoe voller de buis,
+     hoe warmer het plastic kleurt: helder, dan amber, dan rood als ze vol
+     zit en er niets meer bij kan. */
+  const vol = Math.min(1, G.inBuis / BUIS);
+  strokeThrough(pts, 16,
+    vol >= 1   ? 'rgba(255,150,130,.34)' :
+    vol >= 0.7 ? 'rgba(255,214,150,.30)' :
+                 'rgba(198,224,244,.26)');
 
   // glans over de bovenkant van de koker
   ctx.save();
@@ -948,6 +1248,7 @@ function render(now){
   floor();
   for (const t of G.tables) drawTable(t);
   for (const b of G.barriers) drawBarrier(b);
+  drawKar(now);
 
   if (G.food){
     const fx = G.food.x * CELL + CELL / 2, fy = G.food.y * CELL + CELL / 2;
@@ -962,6 +1263,16 @@ function render(now){
     const pulse = 1.5 + Math.sin(now * 0.008) * 1.2;
     drawBall(G.gold.x * CELL + CELL / 2, G.gold.y * CELL + CELL / 2, 7,
              ['#ffd08a', '#ef7d18'], pulse);
+  }
+  if (G.cell){
+    // een oude celluloid bal: ivoorgeel, met de naad nog zichtbaar
+    const ex = G.cell.x * CELL + CELL / 2, ey = G.cell.y * CELL + CELL / 2;
+    const pulse = 1.4 + Math.sin(now * 0.006) * 1.3;
+    drawBall(ex, ey, 7.4, ['#fffbe0', '#d9b45a'], pulse);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(120,80,20,.45)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.ellipse(ex, ey, 2.6, 6.8, 0, 0, 7); ctx.stroke();
+    ctx.restore();
   }
 
   for (const d of G.doors) drawDoor(d, now);
@@ -998,6 +1309,17 @@ function render(now){
 
   ctx.restore();
 
+  /* zolang de trainer fluit hangt er een warme gloed over de zaal —
+     stilstaand, niets dat knippert */
+  if (G.fluit > 0){
+    const a = Math.min(1, G.fluit) * 0.2;
+    const g = ctx.createRadialGradient(W / 2, H / 2, H * 0.22, W / 2, H / 2, H * 0.72);
+    g.addColorStop(0, 'rgba(255,200,80,0)');
+    g.addColorStop(1, 'rgba(255,168,40,' + a.toFixed(3) + ')');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+  }
+
   if (G.flash > 0.01){
     ctx.fillStyle = 'rgba(255,60,60,' + (G.flash * 0.3) + ')';
     ctx.fillRect(0, 0, W, H);
@@ -1013,6 +1335,9 @@ function render(now){
    dan kruipt het spel in slow motion. */
 let lastWall = performance.now();
 let lastStep = performance.now();
+
+/* zolang de trainer fluit loopt alles een tikje rapper */
+function stepNow(){ return G.fluit > 0 ? G.step * 0.85 : G.step; }
 
 function frame(){
   const now = performance.now();
@@ -1035,6 +1360,7 @@ function frame(){
   G.suck   = Math.max(0, G.suck   - dt * 5);
   G.turnFx = Math.max(0, G.turnFx - dt * 6);
   G.doorFx = Math.max(0, G.doorFx - dt * 2.5);
+  G.karFx  = Math.max(0, G.karFx  - dt * 2.5);
   if (G.invuln > 0) G.invuln = Math.max(0, G.invuln - dt);
 
   if (G.screen === 'play' && !G.waiting){
@@ -1042,14 +1368,30 @@ function frame(){
       G.gold.life -= dt;
       if (G.gold.life <= 0) G.gold = null;
     }
+    if (G.cell){
+      G.cell.life -= dt;
+      if (G.cell.life <= 0) G.cell = null;
+    }
+
+    /* Het fluitje loopt alleen terwijl er gespeeld wordt: sta je op een
+       tussenscherm, dan staat de trainer ook stil. */
+    if (G.fluit > 0){
+      G.fluit = Math.max(0, G.fluit - dt);
+      if (G.fluit === 0){ G.fluitIn = 22 + Math.random() * 8; setTag(); }
+    } else {
+      G.fluitIn -= dt;
+      if (G.fluitIn <= 0) startFluit();
+    }
+
+    const sp = stepNow();
     let guard = 0;
-    while (now - lastStep >= G.step && G.screen === 'play' && !G.waiting && guard++ < 4){
-      lastStep += G.step;
+    while (now - lastStep >= sp && G.screen === 'play' && !G.waiting && guard++ < 4){
+      lastStep += sp;
       tick();
     }
     // te ver achterop geraakt (tab stond stil): gewoon opnieuw gelijkzetten
-    if (now - lastStep > G.step * 4) lastStep = now;
-    G.frac = Math.min(1, Math.max(0, (now - lastStep) / G.step));
+    if (now - lastStep > sp * 4) lastStep = now;
+    G.frac = Math.min(1, Math.max(0, (now - lastStep) / sp));
   } else {
     lastStep = now;                  // stilstand telt niet mee
     G.frac = 0;
@@ -1200,11 +1542,13 @@ function news(){
 }
 
 /* met ?debug in de url ligt de spelstaat open, handig om te testen */
-if (location.search.includes('debug')) window.__BR = { G, tick, blocked, freeCell };
+if (location.search.includes('debug'))
+  window.__BR = { G, tick, blocked, freeCell, placeKar, dumpBuis, startFluit, karAt, BUIS };
 
 // decor achter het titelscherm
 resetSnake();
 addTable(); addTable();
+placeKar();
 G.food = freeCell();
 show('title');
 drawHearts(); bumpScore(); bumpBalls();

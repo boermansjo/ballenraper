@@ -58,6 +58,10 @@ body{
   min-height:46px;
 }
 #hud-balls{ flex:.85; }
+/* de buismeter staat onder de ballenteller in plaats van ernaast: zo kost
+   ze geen breedte, en op een gsm past de HUD nog altijd in één rij */
+.hudcol{ flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; }
+.bar.buis{ height:7px; }
 #hud-score{ flex:1.3; }
 #hud-lives{ flex:0 0 auto; }
 
@@ -138,6 +142,11 @@ body{
   text-align:center; font-size:10px; letter-spacing:1px;
   color:#cfe9ff; text-shadow:0 2px 0 #04162c;
   pointer-events:none; z-index:3;
+}
+/* zolang de trainer fluit: goud, en geen geknipper */
+#levelTag.fluit{
+  color:#ffe37a;
+  text-shadow:0 0 10px rgba(255,200,60,.85), 0 2px 0 #04162c;
 }
 
 /* ---------- overlays ---------- */
@@ -239,7 +248,12 @@ body{
 .best{ font-size:8px; color:#8fb6dd; margin-top:4px; }
 .best span{ color:var(--gold); }
 
-.rules{ list-style:none; font-size:9px; line-height:2.1; text-align:left; max-width:330px; }
+.rules{ list-style:none; font-size:9px; line-height:1.8; text-align:left; max-width:330px; }
+/* het reglement is lang geworden: enkel de lijst schuift, de titel en de
+   knop blijven staan waar ze staan */
+#screen-how{ justify-content:flex-start; padding-top:16px; gap:8px; }
+#screen-how .rules{ flex:1 1 auto; min-height:0; overflow-y:auto; padding-right:6px; }
+#screen-how .rules li + li{ margin-top:7px; }
 .rules li{ display:flex; align-items:flex-start; gap:10px; }
 .rules li i{ margin-top:4px; }
 .rules b{ color:var(--gold); }
@@ -254,6 +268,10 @@ body{
 .dot.blue{ background:#25406e; }
 .dot.omheining{ background:linear-gradient(#2f6fc4,#0f2f5e); border-radius:2px; width:18px; height:7px; align-self:center; }
 .dot.deur{ background:#1a1220; border:2px solid #d9a441; border-radius:3px; box-shadow:0 0 6px rgba(255,205,120,.6); }
+.dot.kar{ background:linear-gradient(#3a80cc,#0f2f5e); border:2px solid #cfe0ee; border-radius:2px 2px 5px 5px; }
+.dot.buis{ background:linear-gradient(90deg,#f2f2f2 0 45%,#ffd08a 45% 75%,#e03026 75%); border-radius:5px; width:18px; height:8px; align-self:center; }
+.dot.celluloid{ background:radial-gradient(circle at 35% 30%, #fffbe0, #d9b45a); }
+.dot.fluit{ background:radial-gradient(circle at 62% 38%, #3a2a08 0 2px, #ffe37a 2px); }
 .fineprint{ font-size:8px; line-height:1.9; color:#9dc0e0; max-width:320px; }
 
 .clear-rows{ font-size:10px; width:min(280px,90%); display:flex; flex-direction:column; gap:9px; }

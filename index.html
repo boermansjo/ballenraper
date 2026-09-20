@@ -25,7 +25,12 @@
         <circle cx="12" cy="12" r="9" fill="none" stroke="#b9b9b9" stroke-width="1.5"/>
         <ellipse cx="9" cy="8.5" rx="3" ry="2" fill="#fff" opacity=".85"/>
       </svg>
-      <div class="digits small" id="ballCount">000</div>
+      <div class="hudcol">
+        <div class="digits small" id="ballCount">000</div>
+        <div class="bar buis" title="Hoe vol je ballenbuis zit">
+          <div class="bar-fill" id="buisFill" style="width:0%"></div>
+        </div>
+      </div>
     </div>
 
     <div class="hudbox" id="hud-score">
@@ -54,7 +59,7 @@
       <div class="poster-kicker">Gaming</div>
       <h1 class="poster-head">Jeugdspeler moet na élke training alle ballen rapen, dus maakt het bestuur er een videogame van zodat hij het leuk blijft vinden</h1>
       <div class="logo">BALLEN<span>RAPER</span></div>
-      <p class="tagline">Raap alles op wat rolt.<br>Struikel niet over je eigen ballenbuis.</p>
+      <p class="tagline">Raap alles op wat rolt, kieper het in de kar.<br>Struikel niet over je eigen ballenbuis.</p>
       <button class="btn" id="btnStart">SPELEN</button>
       <div class="btnrow">
         <button class="btn ghost" id="btnHow">Hoe werkt het?</button>
@@ -66,14 +71,18 @@
     <div class="overlay hidden" id="screen-how">
       <h2 class="ov-title">Reglement</h2>
       <ul class="rules">
-        <li><i class="dot white"></i><span><b>Veeg</b> om te sturen, of gebruik de pijltjes. Elke bal verlengt je buis.</span></li>
-        <li><i class="dot orange"></i><span><b>Oranje 3-sterren bal</b> — 50 punten en je buis groeit niét.</span></li>
-        <li><i class="dot green"></i><span><b>Tafels</b> — er komt er eentje bij per 8 ballen. Rij er niet tegenaan.</span></li>
+        <li><i class="dot white"></i><span><b>Veeg</b> om te sturen, of de pijltjes. Elke bal verlengt je buis.</span></li>
+        <li><i class="dot kar"></i><span><b>Ballenkar</b> — rij erin en los je buis: <b>20 punten per bal</b>, 250 extra als ze vol zit. Daarna rolt ze weg.</span></li>
+        <li><i class="dot buis"></i><span><b>Buis vol bij 24.</b> Wat er dan nog bijkomt, ketst eraf. De meter bovenaan kleurt mee.</span></li>
+        <li><i class="dot orange"></i><span><b>Oranje 3-sterren bal</b> — 50 punten, en je buis groeit niet.</span></li>
+        <li><i class="dot celluloid"></i><span><b>Celluloid bal</b> — 150 punten, maar ze neemt plaats voor drié.</span></li>
+        <li><i class="dot fluit"></i><span><b>Trainersfluitje</b> — vijf seconden dubbele punten, en alles loopt rapper.</span></li>
+        <li><i class="dot green"></i><span><b>Tafels</b> — per 8 ballen komt er eentje bij.</span></li>
         <li><i class="dot blue"></i><span><b>Clubgenoten</b> — die kijken niet uit. Jij wel.</span></li>
-        <li><i class="dot omheining"></i><span><b>Omheiningen</b> — één baan breed. Pas als de zaal vol tafels staat.</span></li>
-        <li><i class="dot deur"></i><span><b>Deuren</b> — vanaf 3 tafels, in de muren. Rij de ene binnen, kom de andere uit.</span></li>
+        <li><i class="dot omheining"></i><span><b>Omheiningen</b> — één baan breed, als de zaal vol tafels staat.</span></li>
+        <li><i class="dot deur"></i><span><b>Deuren</b> — in de muren, vanaf 3 tafels. De ene in, de andere uit.</span></li>
       </ul>
-      <p class="fineprint">Tegen jezelf, een tafel, een clubgenoot of de zijlijn: een hartje minder. Drie hartjes en de training is gedaan.</p>
+      <p class="fineprint">Tegen jezelf, een tafel, een clubgenoot of de zijlijn: een hartje minder — én je buis valt om, dus die ballen ben je kwijt. Drie hartjes en de training is gedaan.</p>
       <button class="btn" id="btnBack">Terug</button>
     </div>
 

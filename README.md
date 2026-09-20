@@ -5,14 +5,25 @@
 > — Wielsbeke nieuwsflits
 
 Het tweede clubspel, na [PIPS OUT!](https://ttcwielsbeke.github.io/pipsout/). Snake, maar
-dan in de zaal: jij raapt de ballen op en de ballenbuis achter je wordt almaar langer.
+dan in de zaal: jij raapt de ballen op, de ballenbuis achter je wordt almaar langer, en
+om de zoveel tijd moet ze leeg in de ballenkar — want vol is vol.
 
 ## Spelen
 
 - **Veeg** om te sturen, of gebruik de pijltjes (ook WASD en ZQSD).
 - De buis vertrekt pas als je zelf stuurt — ook na een botsing en na elke tafel erbij.
 - ⚪ **Bal** — 10 punten, je buis groeit een stukje.
+- 🛒 **Ballenkar** — rij erin en je buis gaat leeg: **20 punten per bal**, en 250 extra
+  als ze vol zat. Daarna rolt iemand de kar ergens anders naartoe. Ze houdt je niet tegen;
+  je rijdt er gewoon doorheen.
+- 🛑 **De buis houdt 24 ballen.** Vol is vol: wat er daarna nog binnenkomt, ketst eraf —
+  geen punten, geen groei. De meter onder je ballenteller kleurt mee, en het plastic van de
+  buis kleurt mee op het veld: helder, dan amber, dan rood.
 - 🟠 **Oranje 3-sterren bal** — 50 punten, en je buis groeit *niet*. Blijft maar even liggen.
+- 🟡 **Celluloid bal** — zeldzaam (één bal op twintig), 150 punten, maar ze neemt plaats
+  voor drié in je buis. Die van achter de radiator.
+- 🎺 **Trainersfluitje** — om de 22 à 30 seconden fluit de trainer: vijf seconden lang
+  tellen alle punten dubbel, ook de bonus van de kar, en loopt alles een tikje rapper.
 - 🟩 **Tafels** — om de 8 ballen plooit iemand er eentje open, tot er acht staan. Nooit
   vlak voor je neus: de baan recht vóór je blijft vrij.
 - 🟦 **Omheiningen** — de lage borden rond de speelvakken. Eén baan breed, drie tot vijf
@@ -23,8 +34,13 @@ dan in de zaal: jij raapt de ballen op en de ballenbuis achter je wordt almaar l
   Rij de ene binnen en je komt de andere uit, de zaal in. Je rijrichting wordt dus
   bepaald door de muur waar je uitkomt. Ze verhuizen bij elke nieuwe tafel.
 
-Tegen jezelf, een tafel, een clubgenoot of de zijlijn kost een hartje. Drie hartjes en de
-training zit erop. Na afloop zet je je naam bij je score en kom je in de erelijst.
+Tegen jezelf, een tafel, een clubgenoot of de zijlijn kost een hartje — **én je buis valt
+om**, dus wat erin zat ben je kwijt. Drie hartjes en de training zit erop. Na afloop zet je
+je naam bij je score en kom je in de erelijst.
+
+Daar zit het hele spel in: de kar betaalt per bal, dus hoe langer je doorrijdt hoe meer het
+opbrengt — maar hoe voller je buis, hoe langer en onhandiger je bent, en hoe meer je
+verliest als het misgaat.
 
 ## Technisch
 
@@ -39,6 +55,15 @@ Vier bestanden, geen build, geen dependencies, geen assets.
 | `config.js` | sleutels en instellingen |
 
 - Het speelveld is een raster van 22 × 26 cellen van 20 pixels.
+- Het speeltempo zit in drie constanten bovenaan [`game.js`](game.js): `TRAAGSTE` (de start,
+  155 ms per cel), `RAPSTE` (het plafond, 95 ms) en `PER_BAL` (hoeveel er per geraapte bal
+  af gaat, 1,2 ms). Het plafond ligt dus na vijftig ballen. Dat plafond lag vroeger op 75 ms
+  en werd al na achtendertig ballen bereikt — prima toen een partij daar ongeveer eindigde,
+  maar met de ballenkar speel je honderden ballen door en zat je zowat de hele partij op
+  volle snelheid.
+- De ballenkar houdt altijd een cel speling van tafels en omheiningen, en omgekeerd gaat er
+  nooit een tafel of omheining tegen de kar staan. Anders sta je met een volle buis voor een
+  kar waar je niet meer bij kan.
 - Alle geluid is gesynthetiseerd met de Web Audio API.
 - `?debug` in de url zet `window.__BR` open met de spelstaat erin, handig om te testen.
 
