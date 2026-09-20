@@ -11,8 +11,8 @@ window.PIPSOUT = {
 
     /* Nog leeg tijdens het testen. De SQL voor de tabel staat in
        README.md — een eigen tabel, los van die van PIPS OUT.        */
-    url: '',
-    key: '',
+    url: 'https://aqaikstibteqcdgxtuiw.supabase.co',
+    key: 'sb_publishable_yt1HRtTr-Z8WCiZv3_uCkQ_on2j5ZJ4',
     table: 'scores_ballenraper',
 
     /* Welk spel deze scores zijn. Wordt meegestuurd bij het opslaan
