@@ -15,6 +15,9 @@ dan in de zaal: jij raapt de ballen op en de ballenbuis achter je wordt almaar l
 - 🟠 **Oranje 3-sterren bal** — 50 punten, en je buis groeit *niet*. Blijft maar even liggen.
 - 🟩 **Tafels** — om de 8 ballen plooit iemand er eentje open. Hoe voller de zaal, hoe krapper.
   Nooit vlak voor je neus: de baan recht vóór je blijft vrij.
+- 🟦 **Omheiningen** — de lage borden rond de speelvakken. Eén baan breed, drie tot vijf
+  lang, en er komt er eentje bij per tafel. Ze houden altijd een cel speling van tafels en
+  van elkaar, zodat er overal nog een doorgang blijft.
 - 🔵 **Clubgenoten** — die wandelen dwars door de zaal en kijken niet uit.
 - 🚪 **Deuren** — vanaf drie tafels staan er twee open, altijd in een muur van de zaal.
   Rij de ene binnen en je komt de andere uit, de zaal in. Je rijrichting wordt dus

@@ -62,7 +62,8 @@ const OVER_QUIPS = [
   'De zijlijn is ook een lijn, blijkt.',
   'Sorry tegen je clubgenoot gezegd? Dacht het niet.',
   'De rest zit al in de kantine.',
-  'Morgen weer een training, morgen weer ballen.'
+  'Morgen weer een training, morgen weer ballen.',
+  'Tegen de omheining. Die stond er al voor jij lid werd.'
 ];
 
 const pick = a => a[(Math.random() * a.length) | 0];
@@ -125,7 +126,7 @@ const G = {
   screen: 'title',
   snake: [], dir: { x: 0, y: -1 }, queue: [],
   balls: 0, score: 0, lives: 3,
-  tables: [], mates: [], doors: [], doorFx: 0,
+  tables: [], barriers: [], mates: [], doors: [], doorFx: 0,
   food: null, gold: null,
   step: 150,
   grow: 0, invuln: 0, waiting: true, frac: 0, grew: false,
@@ -142,6 +143,9 @@ function blocked(x, y, opts){
   if (x < 0 || y < 0 || x >= COLS || y >= ROWS) return 'muur';
   for (const t of G.tables){
     if (x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h) return 'tafel';
+  }
+  for (const b of G.barriers){
+    if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) return 'omheining';
   }
   if (!o.skipMates){
     for (const m of G.mates) if (m.x === x && m.y === y) return 'clubgenoot';
@@ -268,11 +272,13 @@ function addTable(){
     // het midden vrijhouden om te kunnen herstarten
     if (x < SAFE.x1 && x + w > SAFE.x0 && y < SAFE.y1 && y + h > SAFE.y0) continue;
 
-    // een cel speling rond andere tafels, en niet bovenop de buis
+    // een cel speling rond tafels én omheiningen, anders sluit je een
+    // doorgang af die er bij het plaatsen van die omheining nog was
     let ok = true;
     for (let yy = y - 1; yy <= y + h && ok; yy++){
       for (let xx = x - 1; xx <= x + w && ok; xx++){
-        if (blocked(xx, yy, { skipMates: true }) === 'tafel') ok = false;
+        const wat = blocked(xx, yy, { skipMates: true });
+        if (wat === 'tafel' || wat === 'omheining') ok = false;
       }
     }
     if (!ok) continue;
@@ -285,6 +291,55 @@ function addTable(){
     if (!ok) continue;
 
     G.tables.push({ x, y, w, h });
+    return true;
+  }
+  return false;
+}
+
+/* ---------- een omheining erbij ----------
+   De lage borden die de speelvakken afschermen: één baan breed en
+   drie tot vijf lang. Ze houden altijd een cel speling van tafels en
+   van elkaar, zodat er overal nog een doorgang blijft. */
+function addBarrier(){
+  if (G.barriers.length >= 6) return false;
+  const verboden = baanVoorJe();
+
+  for (let tries = 0; tries < 300; tries++){
+    const lang = 3 + ((Math.random() * 3) | 0);
+    const rechtop = Math.random() < 0.5;
+    const w = rechtop ? 1 : lang, h = rechtop ? lang : 1;
+    const x = 1 + ((Math.random() * (COLS - w - 2)) | 0);
+    const y = 1 + ((Math.random() * (ROWS - h - 2)) | 0);
+
+    // het midden blijft vrij om te kunnen herstarten
+    if (x < SAFE.x1 && x + w > SAFE.x0 && y < SAFE.y1 && y + h > SAFE.y0) continue;
+
+    let ok = true;
+    for (let yy = y - 1; yy <= y + h && ok; yy++){
+      for (let xx = x - 1; xx <= x + w && ok; xx++){
+        const wat = blocked(xx, yy, { skipSnake: true, skipMates: true });
+        if (wat === 'tafel' || wat === 'omheining') ok = false;      // speling errond
+      }
+    }
+    if (!ok) continue;
+
+    for (let yy = y; yy < y + h && ok; yy++){
+      for (let xx = x; xx < x + w && ok; xx++){
+        if (blocked(xx, yy, { skipMates: true })) ok = false;
+        else if (verboden.has(xx + ',' + yy)) ok = false;
+        else if (doorAt(xx, yy)) ok = false;
+        else {
+          // nooit pal voor een deur gaan staan
+          for (const d of G.doors){
+            const inz = INWAARTS[d.zijde];
+            if (inz && d.x + inz.x === xx && d.y + inz.y === yy) ok = false;
+          }
+        }
+      }
+    }
+    if (!ok) continue;
+
+    G.barriers.push({ x, y, w, h });
     return true;
   }
   return false;
@@ -327,7 +382,7 @@ function resetSnake(){
 
 function startGame(){
   G.balls = 0; G.score = 0; G.lives = 3;
-  G.tables = []; G.mates = []; G.doors = [];
+  G.tables = []; G.barriers = []; G.mates = []; G.doors = [];
   G.food = null; G.gold = null;
   G.parts = []; G.texts = [];
   G.step = 150;
@@ -369,6 +424,7 @@ function eat(gold){
 
 function newTable(){
   if (!addTable()) return;
+  if (G.tables.length >= 2) addBarrier();
   syncMates();
   placeDoors();
   const bonus = 100 * G.tables.length;
@@ -407,6 +463,7 @@ function gameOver(reason){
                           : reason === 'tafel'  ? OVER_QUIPS[1]
                           : reason === 'muur'   ? OVER_QUIPS[2]
                           : reason === 'clubgenoot' ? OVER_QUIPS[3]
+                          : reason === 'omheining'  ? OVER_QUIPS[6]
                           : pick(OVER_QUIPS);
   el.bestOver.textContent = G.best;
   el.submitRow.classList.toggle('hidden', G.score <= 0);
@@ -609,6 +666,44 @@ function drawBall(cx, cy, r, col, ring){
   if (ring){
     ctx.beginPath(); ctx.arc(cx, cy, r + ring, 0, 7);
     ctx.strokeStyle = 'rgba(255,190,80,.7)'; ctx.lineWidth = 2; ctx.stroke();
+  }
+}
+
+function drawBarrier(b){
+  const x = b.x * CELL, y = b.y * CELL, w = b.w * CELL, h = b.h * CELL;
+  const rechtop = b.h > b.w;
+  const d = 6;                                   // hoe dik het bord oogt
+
+  // schaduw op de vloer
+  ctx.fillStyle = 'rgba(25,14,4,.35)';
+  ctx.beginPath();
+  ctx.roundRect(x + (rechtop ? d : 3), y + (rechtop ? 3 : d), rechtop ? w - d : w, rechtop ? h : h - d, 4);
+  ctx.fill();
+
+  // het bord zelf
+  const bx = x + (rechtop ? d - 2 : 1), by = y + (rechtop ? 1 : d - 2);
+  const bw = rechtop ? w - (d - 2) * 2 + 2 : w - 2;
+  const bh = rechtop ? h - 2 : h - (d - 2) * 2 + 2;
+  const g = rechtop ? ctx.createLinearGradient(bx, 0, bx + bw, 0)
+                    : ctx.createLinearGradient(0, by, 0, by + bh);
+  g.addColorStop(0, '#2f6fc4'); g.addColorStop(.45, '#1b4b8f'); g.addColorStop(1, '#0f2f5e');
+  ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 3);
+  ctx.fillStyle = g; ctx.fill();
+  ctx.strokeStyle = 'rgba(8,24,48,.75)'; ctx.lineWidth = 1.5; ctx.stroke();
+
+  // de witte streep van de sponsor
+  ctx.fillStyle = 'rgba(255,255,255,.4)';
+  if (rechtop) ctx.fillRect(bx + bw / 2 - 1, by + 4, 2, bh - 8);
+  else         ctx.fillRect(bx + 4, by + bh / 2 - 1, bw - 8, 2);
+
+  // pootjes aan de uiteinden
+  ctx.fillStyle = 'rgba(10,28,56,.9)';
+  if (rechtop){
+    ctx.fillRect(x + 2, y + 2, w - 4, 3);
+    ctx.fillRect(x + 2, y + h - 5, w - 4, 3);
+  } else {
+    ctx.fillRect(x + 2, y + 2, 3, h - 4);
+    ctx.fillRect(x + w - 5, y + 2, 3, h - 4);
   }
 }
 
@@ -815,6 +910,7 @@ function render(now){
 
   floor();
   for (const t of G.tables) drawTable(t);
+  for (const b of G.barriers) drawBarrier(b);
 
   if (G.food){
     const fx = G.food.x * CELL + CELL / 2, fy = G.food.y * CELL + CELL / 2;
