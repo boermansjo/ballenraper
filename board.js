@@ -52,6 +52,22 @@ function dagStart(d){
   }
 }
 
+/* De dag als sleutel: '2026-09-20'. Hier hangt de zaal van vandaag aan,
+   dus ze moet voor heel de club dezelfde zijn — vandaar opnieuw de klok
+   van Brussel en niet die van het toestel. */
+function dagSleutel(d){
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit'
+    }).format(d || new Date());
+  } catch (_){
+    const l = d || new Date();
+    return l.getFullYear() + '-' +
+           String(l.getMonth() + 1).padStart(2, '0') + '-' +
+           String(l.getDate()).padStart(2, '0');
+  }
+}
+
 function dagNaam(d){
   try {
     return new Intl.DateTimeFormat('nl-BE', { timeZone: TZ, day: 'numeric', month: 'long' })
@@ -148,6 +164,7 @@ return {
 
   dagStart,
   dagNaam,
+  dagSleutel,
 
   /* {rows, remote, offline, vandaag} — offline betekent: de gedeelde lijst
      was niet bereikbaar, dit is wat er lokaal staat.

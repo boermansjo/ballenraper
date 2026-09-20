@@ -44,7 +44,7 @@ const el = {
   tableQuip: $('tableQuip'), tableCount: $('tableCount'), tableTitle: $('tableTitle'),
   tableBalls: $('tableBalls'), tableBonus: $('tableBonus'),
   overQuip: $('overQuip'), finalScore: $('finalScore'), bestOver: $('bestOver'),
-  boardList: $('boardList'), boardNote: $('boardNote'),
+  boardList: $('boardList'), boardNote: $('boardNote'), dagNaam: $('dagNaam'),
   tabDag: $('tabDag'), tabAlles: $('tabAlles'),
   submitRow: $('submitRow'), submitDone: $('submitDone'), playerName: $('playerName')
 };
@@ -67,7 +67,9 @@ const HEADLINES = [
   'Trainer fluit. Niemand weet waarvoor, iedereen loopt rapper.',
   'Ballenkar staat nooit waar je ze gelaten hebt. Onderzoek loopt.',
   'Speler leegt buis naast de kar in plaats van erin. Mag herbeginnen.',
-  'Materiaalploeg vraagt tweede ballenkar. Bestuur vraagt eerst de rekening.'
+  'Materiaalploeg vraagt tweede ballenkar. Bestuur vraagt eerst de rekening.',
+  'Zaal staat bij iedereen gelijk opgesteld. Uitvluchten worden niet meer aanvaard.',
+  'Speler beweert dat zijn zaal moeilijker stond. Zaal stond bij iedereen hetzelfde.'
 ];
 
 const TABLE_QUIPS = [
@@ -187,7 +189,8 @@ const G = {
   balls: 0, score: 0, lives: 3, level: 1,
   tables: [], barriers: [], mates: [], doors: [], doorFx: 0,
   food: null, gold: null, cell: null,
-  kar: null, inBuis: 0, karFx: 0,
+  kar: null, inBuis: 0, karFx: 0, lossing: 0,
+  plan: null, teDoen: [], omhTeDoen: [],
   fluit: 0, fluitIn: 20,
   step: TRAAGSTE,
   grow: 0, invuln: 0, waiting: true, frac: 0, grew: false,
@@ -222,6 +225,134 @@ function blocked(x, y, opts){
   return null;
 }
 
+/* ============================================================
+   DE ZAAL VAN VANDAAG
+   Iedereen speelt dezelfde zaal: de eerste tafel van vandaag staat
+   voor heel de club op dezelfde plek, de tweede ook, en zo verder.
+   Dat vraagt geen server. Een gewone toevalsgenerator geeft elke keer
+   iets anders, maar een gezaaide generator geeft altijd dezelfde reeks
+   bij hetzelfde vertrekgetal — en dat vertrekgetal is gewoon de datum.
+
+   Eén ding kan niet vooraf vastliggen: waar jíj op dat moment rijdt.
+   Een tafel mag nooit pal voor je neus opengeplooid worden, en ze mag
+   niet bovenop je buis staan. Daarom ligt er per beurt niet één plek
+   klaar maar een handvol, en wordt de eerste genomen die kan. Zit de
+   eerste je in de weg, dan schuift het naar de tweede — enkel voor jou,
+   en enkel voor die ene tafel: het plan van de volgende tafels blijft
+   hetzelfde. Zo loopt niemands zaal helemaal uit de pas.
+   ============================================================ */
+const KANDIDATEN = 8;
+
+function hashSleutel(sleutel){
+  let h = 2166136261;
+  for (let i = 0; i < sleutel.length; i++) h = Math.imul(h ^ sleutel.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
+
+/* mulberry32: klein, snel, en overal hetzelfde resultaat */
+function generator(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function dagSleutel(){
+  try {
+    if (window.PipsBoard && PipsBoard.dagSleutel) return PipsBoard.dagSleutel();
+  } catch (_){}
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') +
+         '-' + String(d.getDate()).padStart(2, '0');
+}
+
+/* De hele zaal wordt vooraf gelegd, in een lege zaal en zonder speler:
+   acht tafels en zes omheiningen die onderling hun cel speling houden.
+   Daardoor is de vers gelegde zaal voor iedereen dezelfde, wat er ook
+   gebeurt tijdens het spelen.
+
+   Bij het spelen worden ze één voor één onthuld. Ligt de eerstvolgende
+   net op de plek waar jíj rijdt, dan schuift ze naar achter en komt er
+   eentje van verderop in de plaats. Je krijgt dus dezelfde acht tafels
+   als de rest van de club, af en toe in een andere volgorde — en tegen
+   het einde staat ieders zaal er identiek bij. */
+function botst(a, b, speling){
+  return a.x - speling < b.x + b.w && a.x + a.w + speling > b.x &&
+         a.y - speling < b.y + b.h && a.y + a.h + speling > b.y;
+}
+function inHetMidden(a){
+  return a.x < SAFE.x1 && a.x + a.w > SAFE.x0 && a.y < SAFE.y1 && a.y + a.h > SAFE.y0;
+}
+
+function maakPlan(sleutel){
+  const r = generator(hashSleutel(sleutel));
+  const tafels = [], omheiningen = [];
+
+  const past = a => !inHetMidden(a) &&
+    !tafels.some(b => botst(a, b, 1)) && !omheiningen.some(b => botst(a, b, 1));
+
+  for (let n = 0; n < 8; n++){
+    for (let t = 0; t < 600; t++){
+      const a = { x: 1 + ((r() * (COLS - 4 - 2)) | 0), y: 1 + ((r() * (ROWS - 2 - 2)) | 0), w: 4, h: 2 };
+      if (past(a)){ tafels.push(a); break; }
+    }
+  }
+  for (let n = 0; n < 6; n++){
+    for (let t = 0; t < 600; t++){
+      const lang = 3 + ((r() * 3) | 0);
+      const rechtop = r() < 0.5;
+      const w = rechtop ? 1 : lang, h = rechtop ? lang : 1;
+      const a = { x: 1 + ((r() * (COLS - w - 2)) | 0), y: 1 + ((r() * (ROWS - h - 2)) | 0), w, h };
+      if (past(a)){ omheiningen.push(a); break; }
+    }
+  }
+
+  /* Deuren en karplekken worden getoetst aan de vólle zaal. Wat daar
+     past, past ook in een zaal waar nog maar de helft van staat, dus
+     kloppen ze op elk niveau. */
+  const vrijInVolleZaal = (x, y, w, h, speling) => {
+    const a = { x, y, w: w || 1, h: h || 1 };
+    return !tafels.some(b => botst(a, b, speling)) && !omheiningen.some(b => botst(a, b, speling));
+  };
+
+  const deuren = [];
+  for (let n = 0; n < 24; n++){
+    const lijst = [];
+    for (let k = 0; k < 40 && lijst.length < KANDIDATEN; k++){
+      const zijde = (r() * 4) | 0;
+      const d = zijde === 0 ? { x: 0,        y: 2 + ((r() * (ROWS - 4)) | 0), zijde: 'links'  }
+              : zijde === 1 ? { x: COLS - 1, y: 2 + ((r() * (ROWS - 4)) | 0), zijde: 'rechts' }
+              : zijde === 2 ? { x: 2 + ((r() * (COLS - 4)) | 0), y: 0,        zijde: 'boven'  }
+              :               { x: 2 + ((r() * (COLS - 4)) | 0), y: ROWS - 1, zijde: 'onder'  };
+      const inz = INWAARTS[d.zijde];
+      // de deur zelf vrij, en de cel ervóór ook, anders kom je er niet uit
+      if (!vrijInVolleZaal(d.x, d.y, 1, 1, 1)) continue;
+      if (!vrijInVolleZaal(d.x + inz.x, d.y + inz.y, 1, 1, 0)) continue;
+      lijst.push(d);
+    }
+    deuren.push(lijst);
+  }
+
+  const karren = [];
+  for (let n = 0; n < 80; n++){
+    const lijst = [];
+    // in een volle zaal is een vrij plekje van twee bij twee schaars,
+    // dus geven we de generator hier wat meer pogingen
+    for (let k = 0; k < 250 && lijst.length < KANDIDATEN; k++){
+      const x = 1 + ((r() * (COLS - 3)) | 0), y = 1 + ((r() * (ROWS - 3)) | 0);
+      const a = { x, y, w: 2, h: 2 };
+      if (inHetMidden(a)) continue;
+      if (!vrijInVolleZaal(x, y, 2, 2, 1)) continue;
+      lijst.push({ x, y });
+    }
+    karren.push(lijst);
+  }
+
+  return { sleutel, tafels, omheiningen, deuren, karren };
+}
+
 /* ---------- de ballenkar ----------
    Twee bij twee cellen, en je rijdt er gewoon in: ze houdt je niet tegen,
    ze neemt je buis over. Na elke lossing rolt iemand ze ergens anders. */
@@ -233,43 +364,48 @@ function karZone(x, y){
                     y >= G.kar.y - 1 && y <= G.kar.y + 2;
 }
 
+function karKan(x, y, verboden, kop){
+  if (x < 1 || y < 1 || x > COLS - 3 || y > ROWS - 3) return false;
+  // het midden blijft leeg, daar herstart je
+  if (x < SAFE.x1 && x + 2 > SAFE.x0 && y < SAFE.y1 && y + 2 > SAFE.y0) return false;
+  // ver genoeg weg, anders is het geen ritje
+  if (Math.abs(kop.x - x) + Math.abs(kop.y - y) < 6) return false;
+
+  // een cel speling rond de kar, zodat je er altijd aan kan
+  for (let yy = y - 1; yy <= y + 2; yy++){
+    for (let xx = x - 1; xx <= x + 2; xx++){
+      const wat = blocked(xx, yy, { skipSnake: true, skipMates: true });
+      if (wat === 'tafel' || wat === 'omheining') return false;
+    }
+  }
+
+  for (let yy = y; yy < y + 2; yy++){
+    for (let xx = x; xx < x + 2; xx++){
+      if (blocked(xx, yy, { skipMates: true })) return false;
+      if (verboden.has(xx + ',' + yy)) return false;
+      if (doorAt(xx, yy)) return false;
+      if (G.food && G.food.x === xx && G.food.y === yy) return false;
+      if (G.gold && G.gold.x === xx && G.gold.y === yy) return false;
+      if (G.cell && G.cell.x === xx && G.cell.y === yy) return false;
+    }
+  }
+  return true;
+}
+
 function placeKar(){
   const verboden = baanVoorJe();
   const kop = G.snake[0] || { x: (COLS / 2) | 0, y: (ROWS / 2) | 0 };
 
+  // eerst de plek die vandaag aan de beurt is
+  const plan = G.plan && G.plan.karren[G.lossing % G.plan.karren.length];
+  for (const k of (plan || [])){
+    if (karKan(k.x, k.y, verboden, kop)){ G.kar = { x: k.x, y: k.y }; return true; }
+  }
+  // stond je daar net allemaal in de weg: dan maar zelf zoeken
   for (let tries = 0; tries < 500; tries++){
     const x = 1 + ((Math.random() * (COLS - 3)) | 0);
     const y = 1 + ((Math.random() * (ROWS - 3)) | 0);
-
-    // het midden blijft leeg, daar herstart je
-    if (x < SAFE.x1 && x + 2 > SAFE.x0 && y < SAFE.y1 && y + 2 > SAFE.y0) continue;
-    // ver genoeg weg, anders is het geen ritje
-    if (Math.abs(kop.x - x) + Math.abs(kop.y - y) < 6) continue;
-
-    let ok = true;
-    // een cel speling rond de kar, zodat je er altijd aan kan
-    for (let yy = y - 1; yy <= y + 2 && ok; yy++){
-      for (let xx = x - 1; xx <= x + 2 && ok; xx++){
-        const wat = blocked(xx, yy, { skipSnake: true, skipMates: true });
-        if (wat === 'tafel' || wat === 'omheining') ok = false;
-      }
-    }
-    if (!ok) continue;
-
-    for (let yy = y; yy < y + 2 && ok; yy++){
-      for (let xx = x; xx < x + 2 && ok; xx++){
-        if (blocked(xx, yy, { skipMates: true })) ok = false;
-        else if (verboden.has(xx + ',' + yy)) ok = false;
-        else if (doorAt(xx, yy)) ok = false;
-        else if (G.food && G.food.x === xx && G.food.y === yy) ok = false;
-        else if (G.gold && G.gold.x === xx && G.gold.y === yy) ok = false;
-        else if (G.cell && G.cell.x === xx && G.cell.y === yy) ok = false;
-      }
-    }
-    if (!ok) continue;
-
-    G.kar = { x, y };
-    return true;
+    if (karKan(x, y, verboden, kop)){ G.kar = { x, y }; return true; }
   }
   return false;                    // geen plek: de kar blijft staan waar ze staat
 }
@@ -302,12 +438,18 @@ function freeCell(){
   return null;
 }
 
-/* ---------- de cellen recht vóór je, die blijven vrij ---------- */
-function baanVoorJe(){
+/* ---------- de cellen recht vóór je, die blijven vrij ----------
+   Standaard zes cellen ver. Bij een nieuwe tafel of omheining volstaan er
+   drie: daar valt het spel stil met een tussenscherm en vertrek je pas
+   weer als je zelf veegt, dus je ziet wat er staat voor je rijdt. Minder
+   cellen betekent dat de tafel die aan de beurt is vaker ook effectief
+   aan de beurt komt, en ieders zaal dus gelijker loopt. */
+function baanVoorJe(ver){
   const set = new Set();
   const kop = G.snake[0];
   if (!kop) return set;
-  for (let k = 0; k <= 6; k++){
+  const diep = ver || 6;
+  for (let k = 0; k <= diep; k++){
     const bx = kop.x + G.dir.x * k, by = kop.y + G.dir.y * k;
     for (let ox = -1; ox <= 1; ox++)
       for (let oy = -1; oy <= 1; oy++)
@@ -346,70 +488,108 @@ function placeDoors(){
     return                   { x: 2 + ((Math.random() * (COLS - 4)) | 0), y: ROWS - 1, zijde: 'onder'  };
   };
 
-  for (let n = 0; n < 2; n++){
-    for (let tries = 0; tries < 400; tries++){
+  const deurKan = (kand) => {
+    const x = kand.x, y = kand.y;
+    if (blocked(x, y)) return false;
+    if (verboden.has(x + ',' + y)) return false;
+    if (karZone(x, y)) return false;
+    if (G.food && G.food.x === x && G.food.y === y) return false;
+    // ver genoeg uit elkaar, anders heb je er niets aan
+    if (gekozen.some(d => Math.abs(d.x - x) + Math.abs(d.y - y) < 9)) return false;
+    // niet tegen een tafel aan geplakt
+    for (let ox = -1; ox <= 1; ox++)
+      for (let oy = -1; oy <= 1; oy++)
+        if (blocked(x + ox, y + oy, { skipSnake: true, skipMates: true }) === 'tafel') return false;
+    // en de cel vóór de deur moet vrij zijn, anders kom je er niet uit
+    const inz = INWAARTS[kand.zijde];
+    if (!inz) return false;
+    if (blocked(x + inz.x, y + inz.y, { skipSnake: true })) return false;
+    return true;
+  };
+
+  // de deuren van vandaag, per niveau
+  const plan = G.plan && G.plan.deuren[Math.min(G.level, G.plan.deuren.length - 1)];
+  for (const kand of (plan || [])){
+    if (gekozen.length >= 2) break;
+    if (deurKan(kand)) gekozen.push(kand);
+  }
+  while (gekozen.length < 2){
+    let gevonden = false;
+    for (let tries = 0; tries < 400 && !gevonden; tries++){
       const kand = opDeRand();
-      const x = kand.x, y = kand.y;
-      if (blocked(x, y)) continue;
-      if (verboden.has(x + ',' + y)) continue;
-      if (karZone(x, y)) continue;
-      if (G.food && G.food.x === x && G.food.y === y) continue;
-      // ver genoeg uit elkaar, anders heb je er niets aan
-      if (gekozen.some(d => Math.abs(d.x - x) + Math.abs(d.y - y) < 9)) continue;
-      // niet tegen een tafel aan geplakt
-      let vrij = true;
-      for (let ox = -1; ox <= 1 && vrij; ox++)
-        for (let oy = -1; oy <= 1 && vrij; oy++)
-          if (blocked(x + ox, y + oy, { skipSnake: true, skipMates: true }) === 'tafel') vrij = false;
-      if (!vrij) continue;
-      // en de cel vóór de deur moet vrij zijn, anders kom je er niet uit
-      const inz = INWAARTS[kand.zijde];
-      if (blocked(x + inz.x, y + inz.y, { skipSnake: true })) continue;
-      gekozen.push(kand);
-      break;
+      if (deurKan(kand)){ gekozen.push(kand); gevonden = true; }
     }
+    if (!gevonden) break;
   }
   if (gekozen.length === 2) G.doors = gekozen;   // half werk heeft geen zin
 }
 
 /* ---------- een tafel erbij ---------- */
+function tafelKan(x, y, w, h, verboden){
+  if (x < 1 || y < 1 || x + w > COLS - 1 || y + h > ROWS - 1) return false;
+
+  // het midden vrijhouden om te kunnen herstarten
+  if (x < SAFE.x1 && x + w > SAFE.x0 && y < SAFE.y1 && y + h > SAFE.y0) return false;
+
+  // een cel speling rond tafels én omheiningen, anders sluit je een
+  // doorgang af die er bij het plaatsen van die omheining nog was
+  for (let yy = y - 1; yy <= y + h; yy++){
+    for (let xx = x - 1; xx <= x + w; xx++){
+      const wat = blocked(xx, yy, { skipMates: true });
+      if (wat === 'tafel' || wat === 'omheining') return false;
+      if (karZone(xx, yy)) return false;              // de kar blijft bereikbaar
+    }
+  }
+  for (let yy = y; yy < y + h; yy++){
+    for (let xx = x; xx < x + w; xx++){
+      if (blocked(xx, yy, { skipMates: true })) return false;
+      if (verboden.has(xx + ',' + yy)) return false;
+    }
+  }
+  return true;
+}
+
 function addTable(){
   if (G.tables.length >= 8) return false;
 
   /* De baan recht voor je blijft vrij. Anders plooit iemand een tafel
      open op de plek waar jij net naartoe reed, en dan is het hartje weg
      voor je iets kan doen. */
-  const verboden = baanVoorJe();
+  const verboden = baanVoorJe(3);
+  const w = 4, h = 2;
 
+  /* De eerste tafel uit het plan die nu kan. Stond je net op die plek,
+     dan blijft ze in de wachtrij en komt er eentje van verderop eerst —
+     dezelfde zaal, even een andere volgorde.
+
+     Kan er géén enkele omdat ze allemaal in je baan liggen, dan nemen we
+     de eerste toch. Beter een tafel in je baan dan een tafel die bij jou
+     ergens anders staat dan bij de rest: het spel valt hier stil met een
+     tussenscherm en vertrekt pas weer als je zelf veegt, dus je ziet ze
+     staan voor je rijdt. */
+  for (const negeerBaan of [false, true]){
+    const baan = negeerBaan ? new Set() : verboden;
+    for (let i = 0; i < G.teDoen.length; i++){
+      const k = G.teDoen[i];
+      if (tafelKan(k.x, k.y, w, h, baan)){
+        G.teDoen.splice(i, 1);
+        G.tables.push({ x: k.x, y: k.y, w, h });
+        return true;
+      }
+    }
+  }
+
+  /* Ligt je buis op elke plek die nog te gaan is, dan plooien we deze
+     keer niets open. Liever een keer geen tafel dan een tafel die bij
+     jou ergens staat waar ze bij de rest van de club niet staat; acht
+     ballen later is er weer plaats. */
+  if (G.teDoen.length) return false;
+
+  // alleen als het plan op is (zou niet mogen), zoeken we nog zelf
   for (let tries = 0; tries < 300; tries++){
-    const w = 4, h = 2;
     const x = 1 + ((Math.random() * (COLS - w - 2)) | 0);
     const y = 1 + ((Math.random() * (ROWS - h - 2)) | 0);
-
-    // het midden vrijhouden om te kunnen herstarten
-    if (x < SAFE.x1 && x + w > SAFE.x0 && y < SAFE.y1 && y + h > SAFE.y0) continue;
-
-    // een cel speling rond tafels én omheiningen, anders sluit je een
-    // doorgang af die er bij het plaatsen van die omheining nog was
-    let ok = true;
-    for (let yy = y - 1; yy <= y + h && ok; yy++){
-      for (let xx = x - 1; xx <= x + w && ok; xx++){
-        const wat = blocked(xx, yy, { skipMates: true });
-        if (wat === 'tafel' || wat === 'omheining') ok = false;
-        else if (karZone(xx, yy)) ok = false;         // de kar blijft bereikbaar
-      }
-    }
-    if (!ok) continue;
-    for (let yy = y; yy < y + h && ok; yy++){
-      for (let xx = x; xx < x + w && ok; xx++){
-        if (blocked(xx, yy, { skipMates: true })) ok = false;
-        else if (verboden.has(xx + ',' + yy)) ok = false;
-      }
-    }
-    if (!ok) continue;
-
-    G.tables.push({ x, y, w, h });
-    return true;
+    if (tafelKan(x, y, w, h, verboden)){ G.tables.push({ x, y, w, h }); return true; }
   }
   return false;
 }
@@ -418,9 +598,51 @@ function addTable(){
    De lage borden die de speelvakken afschermen: één baan breed en
    drie tot vijf lang. Ze houden altijd een cel speling van tafels en
    van elkaar, zodat er overal nog een doorgang blijft. */
+function omheiningKan(x, y, w, h, verboden){
+  if (x < 1 || y < 1 || x + w > COLS - 1 || y + h > ROWS - 1) return false;
+
+  // het midden blijft vrij om te kunnen herstarten
+  if (x < SAFE.x1 && x + w > SAFE.x0 && y < SAFE.y1 && y + h > SAFE.y0) return false;
+
+  for (let yy = y - 1; yy <= y + h; yy++){
+    for (let xx = x - 1; xx <= x + w; xx++){
+      const wat = blocked(xx, yy, { skipSnake: true, skipMates: true });
+      if (wat === 'tafel' || wat === 'omheining') return false;      // speling errond
+      if (karZone(xx, yy)) return false;                             // en van de kar
+    }
+  }
+
+  for (let yy = y; yy < y + h; yy++){
+    for (let xx = x; xx < x + w; xx++){
+      if (blocked(xx, yy, { skipMates: true })) return false;
+      if (verboden.has(xx + ',' + yy)) return false;
+      if (doorAt(xx, yy)) return false;
+      // nooit pal voor een deur gaan staan
+      for (const d of G.doors){
+        const inz = INWAARTS[d.zijde];
+        if (inz && d.x + inz.x === xx && d.y + inz.y === yy) return false;
+      }
+    }
+  }
+  return true;
+}
+
 function addBarrier(){
   if (G.barriers.length >= 6) return false;
-  const verboden = baanVoorJe();
+  const verboden = baanVoorJe(3);
+
+  for (const negeerBaan of [false, true]){
+    const baan = negeerBaan ? new Set() : verboden;
+    for (let i = 0; i < G.omhTeDoen.length; i++){
+      const k = G.omhTeDoen[i];
+      if (omheiningKan(k.x, k.y, k.w, k.h, baan)){
+        G.omhTeDoen.splice(i, 1);
+        G.barriers.push({ x: k.x, y: k.y, w: k.w, h: k.h });
+        return true;
+      }
+    }
+  }
+  if (G.omhTeDoen.length) return false;      // straks opnieuw proberen
 
   for (let tries = 0; tries < 300; tries++){
     const lang = 3 + ((Math.random() * 3) | 0);
@@ -428,38 +650,7 @@ function addBarrier(){
     const w = rechtop ? 1 : lang, h = rechtop ? lang : 1;
     const x = 1 + ((Math.random() * (COLS - w - 2)) | 0);
     const y = 1 + ((Math.random() * (ROWS - h - 2)) | 0);
-
-    // het midden blijft vrij om te kunnen herstarten
-    if (x < SAFE.x1 && x + w > SAFE.x0 && y < SAFE.y1 && y + h > SAFE.y0) continue;
-
-    let ok = true;
-    for (let yy = y - 1; yy <= y + h && ok; yy++){
-      for (let xx = x - 1; xx <= x + w && ok; xx++){
-        const wat = blocked(xx, yy, { skipSnake: true, skipMates: true });
-        if (wat === 'tafel' || wat === 'omheining') ok = false;      // speling errond
-        else if (karZone(xx, yy)) ok = false;                        // en van de kar
-      }
-    }
-    if (!ok) continue;
-
-    for (let yy = y; yy < y + h && ok; yy++){
-      for (let xx = x; xx < x + w && ok; xx++){
-        if (blocked(xx, yy, { skipMates: true })) ok = false;
-        else if (verboden.has(xx + ',' + yy)) ok = false;
-        else if (doorAt(xx, yy)) ok = false;
-        else {
-          // nooit pal voor een deur gaan staan
-          for (const d of G.doors){
-            const inz = INWAARTS[d.zijde];
-            if (inz && d.x + inz.x === xx && d.y + inz.y === yy) ok = false;
-          }
-        }
-      }
-    }
-    if (!ok) continue;
-
-    G.barriers.push({ x, y, w, h });
-    return true;
+    if (omheiningKan(x, y, w, h, verboden)){ G.barriers.push({ x, y, w, h }); return true; }
   }
   return false;
 }
@@ -505,7 +696,10 @@ function startGame(){
   G.balls = 0; G.score = 0; G.lives = 3; G.level = 1;
   G.tables = []; G.barriers = []; G.mates = []; G.doors = [];
   G.food = null; G.gold = null; G.cell = null;
-  G.kar = null; G.inBuis = 0; G.karFx = 0;
+  G.kar = null; G.inBuis = 0; G.karFx = 0; G.lossing = 0;
+  G.plan = maakPlan(dagSleutel());      // de zaal van vandaag, voor heel de club dezelfde
+  G.teDoen = G.plan.tafels.slice();
+  G.omhTeDoen = G.plan.omheiningen.slice();
   G.fluit = 0; G.fluitIn = 20;
   G.parts = []; G.texts = [];
   G.step = TRAAGSTE;
@@ -611,6 +805,7 @@ function dumpBuis(){
   burst({ x: G.kar.x + 0.5, y: G.kar.y + 0.5 }, '#f4f7fa', 20);
   Snd.dump();
   bumpScore(); bumpBuis();
+  G.lossing++;
   placeKar();                        // iemand rolt de kar ergens anders
 }
 
@@ -625,8 +820,13 @@ function startFluit(){
 /* Elke acht ballen komt er iets bij. Eerst worden de tafels opengeplooid;
    staat de zaal vol, dan beginnen ze de vakken af te schermen. */
 function newTable(){
+  /* Eerst de acht tafels, daarna pas de omheiningen. Lukt het nu niet —
+     omdat je buis op de plek ligt die aan de beurt is — dan slaan we deze
+     keer over in plaats van iets anders te verzinnen. */
   let soort = 'tafel';
-  if (!addTable()){
+  if (G.tables.length < 8){
+    if (!addTable()) return;
+  } else {
     if (!addBarrier()) return;      // zaal is af, verder niets
     soort = 'omheining';
   }
@@ -1556,9 +1756,18 @@ function news(){
 
 /* met ?debug in de url ligt de spelstaat open, handig om te testen */
 if (location.search.includes('debug'))
-  window.__BR = { G, tick, blocked, freeCell, placeKar, dumpBuis, startFluit, karAt, BUIS };
+  window.__BR = { G, tick, blocked, freeCell, placeKar, dumpBuis, startFluit, karAt, BUIS,
+                  maakPlan, dagSleutel, addTable, addBarrier, placeDoors };
 
 // decor achter het titelscherm
+G.plan = maakPlan(dagSleutel());
+G.teDoen = G.plan.tafels.slice();
+G.omhTeDoen = G.plan.omheiningen.slice();
+try {
+  if (el.dagNaam && window.PipsBoard && PipsBoard.dagNaam){
+    el.dagNaam.textContent = PipsBoard.dagNaam() || 'vandaag';
+  }
+} catch (_){ /* dan blijft er gewoon "vandaag" staan */ }
 resetSnake();
 addTable(); addTable();
 placeKar();

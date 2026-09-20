@@ -83,6 +83,43 @@ previews, opnames, sterk vertraagde tabs — loopt die tijdstempel niet gelijk m
 tijd, en dan kruipt het spel in slow motion terwijl het beeld gewoon doorloopt. Met de
 wandklok blijft de snelheid overal dezelfde, ook als het tekenen hapert.
 
+### De zaal van de dag
+
+Iedereen speelt vandaag dezelfde zaal: de tafels, de omheiningen en de deuren staan
+bij heel de club op dezelfde plek. Morgen een nieuwe zaal. Ballen blijven willekeurig
+liggen — die hangen toch af van waar jouw buis ligt.
+
+Daar is geen server voor nodig. Een gewone `Math.random()` geeft elke keer iets anders,
+maar een **gezaaide** generator (mulberry32) geeft altijd dezelfde reeks bij hetzelfde
+vertrekgetal. Dat vertrekgetal is de datum, door een FNV-hash gehaald. Elke browser
+rekent zo dezelfde zaal uit, zonder één netwerkoproep.
+
+Het addertje zit in de volgorde. Een tafel mag nooit opengeplooid worden op de plek
+waar jíj net rijdt, en al helemaal niet bovenop je buis — en waar jij rijdt, kan niet
+vooraf vastliggen. Simpelweg `Math.random()` vervangen door een gezaaide generator
+werkt daarom **niet**: zodra twee spelers anders rijden, valt de ene keuze anders uit
+dan de andere en loopt alles daarna uit de pas. Gemeten: nog 2 tot 4 van de 8 tafels
+op dezelfde plek.
+
+Daarom wordt de zaal niet tafel per tafel geloot maar **in één keer vooraf gelegd**, in
+een lege zaal en zonder speler: acht tafels en zes omheiningen die onderling hun cel
+speling houden. Tijdens het spelen worden ze uit die wachtrij onthuld. Ligt de
+eerstvolgende net onder je buis, dan blijft ze in de rij staan en komt er eentje van
+verderop eerst. Je krijgt dus dezelfde acht tafels als de rest, af en toe in een andere
+volgorde, en tegen het einde staat ieders zaal identiek opgesteld.
+
+Er wordt nooit een plek verzonnen die niet in het plan staat. Past er op dit moment
+geen enkele, dan plooit er deze keer gewoon niets open en is er acht ballen later weer
+plaats. Gemeten over 24 spelers die elk anders rondreden: 284 plaatsingen, waarvan 0
+buiten het plan, en elke speler die de zaal volspeelde kwam exact op de zaal van die
+dag uit.
+
+Deuren en karplekken worden vooraf getoetst aan de vólle zaal. Wat daar past, past ook
+in een zaal waar nog maar de helft van staat, dus kloppen ze op elk niveau.
+
+De datum komt van de klok van **Europe/Brussels**, niet van het toestel — anders speelt
+wie op reis is een andere zaal dan de rest van de club.
+
 ### Vandaag en aller tijden
 
 De erelijst opent op **vandaag**: daar zit de wedstrijd van de dag. Eén knop ernaast

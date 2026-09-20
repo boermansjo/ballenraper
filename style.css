@@ -273,7 +273,12 @@ body{
 .dot.kar{ background:linear-gradient(#3a80cc,#0f2f5e); border:2px solid #cfe0ee; border-radius:2px 2px 5px 5px; }
 .dot.buis{ background:linear-gradient(90deg,#f2f2f2 0 45%,#ffd08a 45% 75%,#e03026 75%); border-radius:5px; width:18px; height:8px; align-self:center; }
 .dot.celluloid{ background:radial-gradient(circle at 35% 30%, #fffbe0, #d9b45a); }
+.dot.zaal{ background:linear-gradient(#c98f4e,#a3702f); border-radius:2px; box-shadow:inset 0 0 0 2px rgba(31,122,74,.9); }
 .dot.fluit{ background:radial-gradient(circle at 62% 38%, #3a2a08 0 2px, #ffe37a 2px); }
+/* welke zaal het vandaag is, onder de tagline */
+.dagzaal{ font-size:8px; line-height:1.8; color:#9dc0e0; margin-top:-2px; }
+.dagzaal b{ color:var(--gold); }
+
 /* de twee tabbladen boven de erelijst */
 .tabs{ display:flex; gap:6px; }
 .tab{
