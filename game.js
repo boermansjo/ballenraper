@@ -124,7 +124,7 @@ const G = {
   tables: [], mates: [],
   food: null, gold: null,
   step: 150,
-  grow: 0, invuln: 0, waiting: true,
+  grow: 0, invuln: 0, waiting: true, frac: 0, grew: false,
   parts: [], texts: [], shake: 0, flash: 0,
   best: +(localStorage.getItem('ttcw_best_ballenraper') || 0)
 };
@@ -221,11 +221,12 @@ function syncMates(){
 
 function moveMates(){
   for (const m of G.mates){
+    m.moved = false;
     m.t++;
     if (m.t % 3) continue;                       // trager dan jij
     const nx = m.x + m.dx;
-    if (blocked(nx, m.y, { skipSnake: true, skipMates: true })) m.dx *= -1;
-    else m.x = nx;
+    if (blocked(nx, m.y, { skipSnake: true, skipMates: true })){ m.dx *= -1; continue; }
+    m.px = m.x; m.py = m.y; m.x = nx; m.moved = true;
   }
 }
 
@@ -346,6 +347,7 @@ function tick(){
   if (hit){ crash(hit); return; }
 
   G.snake.unshift({ x: nx, y: ny });
+  G.grew = G.grow > 0;
   if (G.grow > 0) G.grow--; else G.snake.pop();
 
   if (G.food && G.food.x === nx && G.food.y === ny) eat(false);
@@ -508,7 +510,12 @@ function drawBall(cx, cy, r, col, ring){
 }
 
 function drawMate(m){
-  const cx = m.x * CELL + CELL / 2, cy = m.y * CELL + CELL / 2;
+  let gx = m.x, gy = m.y;
+  if (m.moved && !G.waiting){        // glijdt van de vorige cel naar deze
+    gx = m.px + (m.x - m.px) * G.frac;
+    gy = m.py + (m.y - m.py) * G.frac;
+  }
+  const cx = gx * CELL + CELL / 2, cy = gy * CELL + CELL / 2;
   ctx.fillStyle = 'rgba(10,20,40,.35)';
   ctx.beginPath(); ctx.ellipse(cx, cy + 8, 8, 3, 0, 0, 7); ctx.fill();
   ctx.fillStyle = '#25406e';
@@ -519,28 +526,104 @@ function drawMate(m){
   ctx.beginPath(); ctx.arc(cx + (m.dx > 0 ? 9 : -9), cy + 2, 3.5, 0, 7); ctx.fill();
 }
 
-function drawSnake(){
-  // de buis: van achter naar voor zodat de kop bovenop ligt
-  for (let i = G.snake.length - 1; i >= 1; i--){
-    const s = G.snake[i];
-    drawBall(s.x * CELL + CELL / 2, s.y * CELL + CELL / 2, 7.5,
-             ['#eef1f4', '#aab3bd'], 0);
+/* De ballenbuis: één doorlopende koker met de balletjes erin,
+   een dopje achteraan en de opraapmond vooraan. De koker schuift
+   met een deel van een cel mee, zodat het glijdt in plaats van
+   van vakje naar vakje te springen. */
+function tubePoints(){
+  const f = G.waiting ? 0 : G.frac;
+  const pts = G.snake.map(s => ({ x: s.x * CELL + CELL / 2, y: s.y * CELL + CELL / 2 }));
+
+  // de kop schuift alvast een stuk naar de volgende cel
+  pts[0] = { x: pts[0].x + G.dir.x * CELL * f, y: pts[0].y + G.dir.y * CELL * f };
+
+  // en de staart schuift even hard naar voren, tenzij de buis net gegroeid is
+  const n = pts.length;
+  if (n > 2 && !G.grew){
+    const a = pts[n - 1], b = pts[n - 2];
+    pts[n - 1] = { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
   }
-  // de kop: een batje
-  const h = G.snake[0];
-  const cx = h.x * CELL + CELL / 2, cy = h.y * CELL + CELL / 2;
-  const a = Math.atan2(G.dir.y, G.dir.x);
+  return pts;
+}
+
+function strokeThrough(pts, width, style){
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+  if (pts.length === 1) ctx.lineTo(pts[0].x, pts[0].y);
+  ctx.lineWidth = width;
+  ctx.strokeStyle = style;
+  ctx.stroke();
+}
+
+function drawSnake(){
+  const pts = tubePoints();
+  const blink = G.invuln > 0 && ((G.invuln * 8) | 0) % 2;
 
   ctx.save();
-  ctx.translate(cx, cy);
-  ctx.rotate(a);
-  if (G.invuln > 0 && ((G.invuln * 8) | 0) % 2) ctx.globalAlpha = 0.45;
-  ctx.fillStyle = '#7d4f22';
-  ctx.beginPath(); ctx.roundRect(-14, -2.5, 10, 5, 2); ctx.fill();
-  const g = ctx.createRadialGradient(-2, -3, 2, 0, 0, 10);
-  g.addColorStop(0, '#e0413f'); g.addColorStop(1, '#8d1519');
-  ctx.beginPath(); ctx.arc(0, 0, 9.5, 0, 7); ctx.fillStyle = g; ctx.fill();
-  ctx.strokeStyle = '#f0e2d2'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.lineJoin = 'round';
+  ctx.lineCap  = 'round';
+  if (blink) ctx.globalAlpha = 0.5;
+
+  // schaduw op de vloer
+  ctx.save();
+  ctx.translate(2, 4);
+  strokeThrough(pts, 19, 'rgba(35,18,4,.32)');
+  ctx.restore();
+
+  // de rand van de koker
+  strokeThrough(pts, 19, 'rgba(96,112,128,.7)');
+  // de binnenkant, net donker genoeg om de balletjes te laten opvallen
+  strokeThrough(pts, 16, 'rgba(78,92,106,.35)');
+
+  // de balletjes zitten érin, dus die komen vóór de wand
+  for (let i = pts.length - 1; i >= 1; i--){
+    const p = pts[i];
+    const g = ctx.createRadialGradient(p.x - 2.2, p.y - 2.8, 1, p.x, p.y, 7);
+    g.addColorStop(0, '#ffffff'); g.addColorStop(.72, '#f2f5f8'); g.addColorStop(1, '#c2cad3');
+    ctx.beginPath(); ctx.arc(p.x, p.y, 6.4, 0, 7);
+    ctx.fillStyle = g; ctx.fill();
+  }
+
+  // en daar gaat het doorschijnende plastic overheen
+  strokeThrough(pts, 16, 'rgba(198,224,244,.26)');
+
+  // glans over de bovenkant van de koker
+  ctx.save();
+  ctx.translate(-1.5, -4.5);
+  ctx.globalAlpha = (blink ? 0.5 : 1) * 0.6;
+  strokeThrough(pts, 3.5, '#ffffff');
+  ctx.restore();
+
+  // het dopje achteraan
+  const tail = pts[pts.length - 1], voor = pts[pts.length - 2] || tail;
+  const ta = Math.atan2(tail.y - voor.y, tail.x - voor.x);
+  ctx.save();
+  ctx.translate(tail.x, tail.y); ctx.rotate(ta);
+  ctx.fillStyle = '#1f63b8';
+  ctx.beginPath(); ctx.roundRect(-2, -9.5, 8, 19, 3); ctx.fill();
+  ctx.strokeStyle = 'rgba(10,30,60,.6)'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.restore();
+
+  // de opraapmond vooraan
+  const h = pts[0];
+  ctx.save();
+  ctx.translate(h.x, h.y);
+  ctx.rotate(Math.atan2(G.dir.y, G.dir.x));
+  // de trechter loopt naar voor open
+  ctx.beginPath();
+  ctx.moveTo(-5, -8); ctx.lineTo(11, -14.5); ctx.lineTo(11, 14.5); ctx.lineTo(-5, 8);
+  ctx.closePath();
+  const fg = ctx.createLinearGradient(-5, -10, 11, 10);
+  fg.addColorStop(0, '#ef5a52'); fg.addColorStop(.55, '#c8242a'); fg.addColorStop(1, '#7d1216');
+  ctx.fillStyle = fg; ctx.fill();
+  ctx.strokeStyle = '#f7e3dd'; ctx.lineWidth = 2; ctx.stroke();
+  // de open bek
+  ctx.beginPath(); ctx.ellipse(11, 0, 3.2, 12.5, 0, 0, 7);
+  ctx.fillStyle = '#33090b'; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,220,210,.55)'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.restore();
+
   ctx.restore();
 }
 
@@ -647,8 +730,10 @@ function frame(){
     }
     // te ver achterop geraakt (tab stond stil): gewoon opnieuw gelijkzetten
     if (now - lastStep > G.step * 4) lastStep = now;
+    G.frac = Math.min(1, Math.max(0, (now - lastStep) / G.step));
   } else {
     lastStep = now;                  // stilstand telt niet mee
+    G.frac = 0;
   }
 
   render(now);
