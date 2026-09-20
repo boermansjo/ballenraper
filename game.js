@@ -199,6 +199,13 @@ function baanVoorJe(){
 /* ---------- twee deuren van de zaal ----------
    Vanaf drie tafels staan er twee deuren open: rij je de ene binnen,
    dan kom je de andere uit. Ze verhuizen bij elke nieuwe tafel. */
+const INWAARTS = {
+  links:  { x:  1, y:  0 },
+  rechts: { x: -1, y:  0 },
+  boven:  { x:  0, y:  1 },
+  onder:  { x:  0, y: -1 }
+};
+
 function doorAt(x, y){ return G.doors.find(d => d.x === x && d.y === y); }
 
 function placeDoors(){
@@ -206,10 +213,23 @@ function placeDoors(){
   if (G.tables.length < 3) return;
   const verboden = baanVoorJe();
   const gekozen = [];
+
+  /* Een deur zit in een muur, niet midden in de zaal. We kiezen dus een
+     cel op de rand, en onthouden tegen welke muur ze staat: daar komt de
+     rijrichting uit voort als je er weer uit rijdt. Hoeken slaan we over,
+     want daar sta je meteen klem. */
+  const opDeRand = () => {
+    const zijde = (Math.random() * 4) | 0;
+    if (zijde === 0) return { x: 0,        y: 2 + ((Math.random() * (ROWS - 4)) | 0), zijde: 'links'  };
+    if (zijde === 1) return { x: COLS - 1, y: 2 + ((Math.random() * (ROWS - 4)) | 0), zijde: 'rechts' };
+    if (zijde === 2) return { x: 2 + ((Math.random() * (COLS - 4)) | 0), y: 0,        zijde: 'boven'  };
+    return                   { x: 2 + ((Math.random() * (COLS - 4)) | 0), y: ROWS - 1, zijde: 'onder'  };
+  };
+
   for (let n = 0; n < 2; n++){
     for (let tries = 0; tries < 400; tries++){
-      const x = 1 + ((Math.random() * (COLS - 2)) | 0);
-      const y = 1 + ((Math.random() * (ROWS - 2)) | 0);
+      const kand = opDeRand();
+      const x = kand.x, y = kand.y;
       if (blocked(x, y)) continue;
       if (verboden.has(x + ',' + y)) continue;
       if (G.food && G.food.x === x && G.food.y === y) continue;
@@ -221,7 +241,10 @@ function placeDoors(){
         for (let oy = -1; oy <= 1 && vrij; oy++)
           if (blocked(x + ox, y + oy, { skipSnake: true, skipMates: true }) === 'tafel') vrij = false;
       if (!vrij) continue;
-      gekozen.push({ x, y });
+      // en de cel vóór de deur moet vrij zijn, anders kom je er niet uit
+      const inz = INWAARTS[kand.zijde];
+      if (blocked(x + inz.x, y + inz.y, { skipSnake: true })) continue;
+      gekozen.push(kand);
       break;
     }
   }
@@ -412,6 +435,10 @@ function tick(){
   if (deur){
     const uit = G.doors.find(d => d !== deur);
     tx = uit.x; ty = uit.y;
+    // je komt een deuropening uit, dus de zaal in
+    const inz = INWAARTS[uit.zijde] || G.dir;
+    G.dir = { x: inz.x, y: inz.y };
+    G.queue.length = 0;
     G.doorFx = 1;
     burst(deur, '#ffd98a', 10);
     burst(uit, '#ffd98a', 10);
@@ -588,31 +615,40 @@ function drawBall(cx, cy, r, col, ring){
 function drawDoor(d, now){
   const cx = d.x * CELL + CELL / 2, cy = d.y * CELL + CELL / 2;
   const puls = 0.5 + 0.5 * Math.sin(now * 0.004 + d.x);
-  const open = 0.35 + puls * 0.3 + G.doorFx * 0.5;
+  const hoek = { links: 0, boven: Math.PI / 2, rechts: Math.PI, onder: -Math.PI / 2 }[d.zijde] || 0;
 
-  // schijnsel op de vloer
   ctx.save();
-  ctx.globalAlpha = 0.25 + puls * 0.2 + G.doorFx * 0.4;
-  const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, 17);
-  g.addColorStop(0, 'rgba(255,214,140,.9)'); g.addColorStop(1, 'rgba(255,190,90,0)');
-  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 17, 0, 7); ctx.fill();
+  ctx.translate(cx, cy);
+  ctx.rotate(hoek);          // vanaf hier wijst +x altijd de zaal in
+
+  // het licht dat de zaal in valt
+  ctx.save();
+  ctx.globalAlpha = 0.3 + puls * 0.18 + G.doorFx * 0.4;
+  const g = ctx.createLinearGradient(-4, 0, 22, 0);
+  g.addColorStop(0, 'rgba(255,220,150,.85)');
+  g.addColorStop(1, 'rgba(255,200,110,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(-4, -9); ctx.lineTo(22, -15); ctx.lineTo(22, 15); ctx.lineTo(-4, 9);
+  ctx.closePath(); ctx.fill();
   ctx.restore();
 
-  // een open deur met het licht van de gang erachter
-  ctx.save();
-  ctx.beginPath(); ctx.roundRect(cx - 8.5, cy - 9.5, 17, 19, 3);
-  const dg = ctx.createLinearGradient(cx - 6, cy - 9, cx + 6, cy + 9);
-  dg.addColorStop(0, '#fff3cf');
-  dg.addColorStop(.5, '#ffd98a');
-  dg.addColorStop(1, '#f0a63a');
+  // de deuropening, plat tegen de muur
+  ctx.beginPath(); ctx.roundRect(-10, -9, 13, 18, 2.5);
+  const dg = ctx.createLinearGradient(-10, 0, 3, 0);
+  dg.addColorStop(0, '#5a3a16');
+  dg.addColorStop(.45, '#ffd98a');
+  dg.addColorStop(1, '#fff3cf');
   ctx.fillStyle = dg; ctx.fill();
-  // de deurstijl
-  ctx.strokeStyle = '#3d2712'; ctx.lineWidth = 3.5; ctx.stroke();
-  ctx.strokeStyle = 'rgba(255,240,200,.5)'; ctx.lineWidth = 1; ctx.stroke();
-  // de donkere gang die je in rijdt
-  ctx.globalAlpha = 0.35 + (1 - open) * 0.3;
-  ctx.beginPath(); ctx.ellipse(cx, cy, 4.2, 7.5, 0, 0, 7);
-  ctx.fillStyle = '#4a2f12'; ctx.fill();
+
+  // de stijl errond
+  ctx.strokeStyle = '#3d2712'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,240,200,.45)'; ctx.lineWidth = 1; ctx.stroke();
+
+  // drempel
+  ctx.beginPath(); ctx.moveTo(3, -9); ctx.lineTo(3, 9);
+  ctx.strokeStyle = 'rgba(70,45,18,.7)'; ctx.lineWidth = 2; ctx.stroke();
+
   ctx.restore();
 }
 
