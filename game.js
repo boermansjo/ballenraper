@@ -125,6 +125,7 @@ const G = {
   food: null, gold: null,
   step: 150,
   grow: 0, invuln: 0, waiting: true, frac: 0, grew: false,
+  suck: 0, turnFx: 0,
   parts: [], texts: [], shake: 0, flash: 0,
   best: +(localStorage.getItem('ttcw_best_ballenraper') || 0)
 };
@@ -265,6 +266,7 @@ function spawnFood(){
 }
 
 function eat(gold){
+  G.suck = 1;
   if (gold){
     G.score += 50;
     G.gold = null;
@@ -336,7 +338,10 @@ function gameOver(reason){
 function tick(){
   if (G.queue.length){
     const d = G.queue.shift();
-    if (d.x !== -G.dir.x || d.y !== -G.dir.y) G.dir = d;
+    if (d.x !== -G.dir.x || d.y !== -G.dir.y){
+      if (d.x !== G.dir.x || d.y !== G.dir.y) G.turnFx = 1;   // even in elkaar duwen
+      G.dir = d;
+    }
   }
 
   const head = G.snake[0];
@@ -532,16 +537,23 @@ function drawMate(m){
    van vakje naar vakje te springen. */
 function tubePoints(){
   const f = G.waiting ? 0 : G.frac;
-  const pts = G.snake.map(s => ({ x: s.x * CELL + CELL / 2, y: s.y * CELL + CELL / 2 }));
+  const n = G.snake.length;
+  const mid = s => ({ x: s.x * CELL + CELL / 2, y: s.y * CELL + CELL / 2 });
+  const pts = new Array(n);
 
-  // de kop schuift alvast een stuk naar de volgende cel
-  pts[0] = { x: pts[0].x + G.dir.x * CELL * f, y: pts[0].y + G.dir.y * CELL * f };
+  // de kop schuift alvast naar de volgende cel
+  const h = mid(G.snake[0]);
+  pts[0] = { x: h.x + G.dir.x * CELL * f, y: h.y + G.dir.y * CELL * f };
 
-  // en de staart schuift even hard naar voren, tenzij de buis net gegroeid is
-  const n = pts.length;
-  if (n > 2 && !G.grew){
-    const a = pts[n - 1], b = pts[n - 2];
-    pts[n - 1] = { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+  /* Elk balletje schuift naar de plaats van het balletje vóór hem.
+     Zo stroomt de hele buis mee in plaats van dat alleen de uiteinden
+     bewegen en de rest ter plaatse blijft staan — dat laatste zag je
+     als flikkeren. Is de buis net gegroeid, dan blijft de staart staan. */
+  for (let i = 1; i < n; i++){
+    const a = mid(G.snake[i]);
+    if (i === n - 1 && G.grew){ pts[i] = a; continue; }
+    const b = mid(G.snake[i - 1]);
+    pts[i] = { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
   }
   return pts;
 }
@@ -558,12 +570,10 @@ function strokeThrough(pts, width, style){
 
 function drawSnake(){
   const pts = tubePoints();
-  const blink = G.invuln > 0 && ((G.invuln * 8) | 0) % 2;
 
   ctx.save();
   ctx.lineJoin = 'round';
   ctx.lineCap  = 'round';
-  if (blink) ctx.globalAlpha = 0.5;
 
   // schaduw op de vloer
   ctx.save();
@@ -591,7 +601,7 @@ function drawSnake(){
   // glans over de bovenkant van de koker
   ctx.save();
   ctx.translate(-1.5, -4.5);
-  ctx.globalAlpha = (blink ? 0.5 : 1) * 0.6;
+  ctx.globalAlpha = 0.6;
   strokeThrough(pts, 3.5, '#ffffff');
   ctx.restore();
 
@@ -610,19 +620,43 @@ function drawSnake(){
   ctx.save();
   ctx.translate(h.x, h.y);
   ctx.rotate(Math.atan2(G.dir.y, G.dir.x));
-  // de trechter loopt naar voor open
+
+  // een bal die er net ingegaan is, verdwijnt in de bek
+  if (G.suck > 0){
+    const q = G.suck;
+    ctx.save();
+    ctx.globalAlpha = q;
+    ctx.beginPath(); ctx.arc(9 + q * 9, 0, 2 + q * 4.5, 0, 7);
+    ctx.fillStyle = '#ffffff'; ctx.fill();
+    ctx.restore();
+  }
+
+  // in een bocht duwt de trechter even in elkaar, en na een slok zet hij uit
+  ctx.scale(1 - G.turnFx * 0.22 + G.suck * 0.10,
+            1 + G.turnFx * 0.24 + G.suck * 0.10);
+
+  // de trechter: net één cel breed, zodat je ziet in welke rij je zit
   ctx.beginPath();
-  ctx.moveTo(-5, -8); ctx.lineTo(11, -14.5); ctx.lineTo(11, 14.5); ctx.lineTo(-5, 8);
+  ctx.moveTo(-4, -6.5); ctx.lineTo(8, -10); ctx.lineTo(8, 10); ctx.lineTo(-4, 6.5);
   ctx.closePath();
-  const fg = ctx.createLinearGradient(-5, -10, 11, 10);
+  const fg = ctx.createLinearGradient(-4, -8, 8, 8);
   fg.addColorStop(0, '#ef5a52'); fg.addColorStop(.55, '#c8242a'); fg.addColorStop(1, '#7d1216');
   ctx.fillStyle = fg; ctx.fill();
   ctx.strokeStyle = '#f7e3dd'; ctx.lineWidth = 2; ctx.stroke();
+
   // de open bek
-  ctx.beginPath(); ctx.ellipse(11, 0, 3.2, 12.5, 0, 0, 7);
+  ctx.beginPath(); ctx.ellipse(8, 0, 2.4, 8.2, 0, 0, 7);
   ctx.fillStyle = '#33090b'; ctx.fill();
   ctx.strokeStyle = 'rgba(255,220,210,.55)'; ctx.lineWidth = 1.5; ctx.stroke();
   ctx.restore();
+
+  // zolang je onkwetsbaar bent: een rustige ring, geen geknipper
+  if (G.invuln > 0){
+    ctx.beginPath();
+    ctx.arc(h.x, h.y, 13 + Math.sin(G.invuln * 9) * 2.5, 0, 7);
+    ctx.strokeStyle = 'rgba(255,255,255,' + Math.min(0.5, G.invuln * 0.4) + ')';
+    ctx.lineWidth = 2.5; ctx.stroke();
+  }
 
   ctx.restore();
 }
@@ -716,6 +750,8 @@ function frame(){
   }
   G.shake = Math.max(0, G.shake - dt * 60);
   G.flash = Math.max(0, G.flash - dt * 3.5);
+  G.suck   = Math.max(0, G.suck   - dt * 5);
+  G.turnFx = Math.max(0, G.turnFx - dt * 6);
   if (G.invuln > 0) G.invuln = Math.max(0, G.invuln - dt);
 
   if (G.screen === 'play' && !G.waiting){
