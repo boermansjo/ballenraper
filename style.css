@@ -61,7 +61,9 @@ body{
 /* de buismeter staat onder de ballenteller in plaats van ernaast: zo kost
    ze geen breedte, en op een gsm past de HUD nog altijd in één rij */
 .hudcol{ flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; }
-.bar.buis{ height:7px; }
+/* let op: .bar erft flex:1, en in deze kolom is de hoofdas de hoogte.
+   Die flex-basis van 0 maakte de balk plat, dus zetten we ze hier vast. */
+.bar.buis{ flex:0 0 7px; height:7px; width:100%; }
 #hud-score{ flex:1.3; }
 #hud-lives{ flex:0 0 auto; }
 
