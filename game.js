@@ -24,7 +24,7 @@ const el = {
   levelTag: $('levelTag'), tickText: $('tickText'), mute: $('mute'),
   title: $('screen-title'), how: $('screen-how'), table: $('screen-table'),
   over: $('screen-over'), board: $('screen-board'),
-  tableQuip: $('tableQuip'), tableCount: $('tableCount'),
+  tableQuip: $('tableQuip'), tableCount: $('tableCount'), tableTitle: $('tableTitle'),
   tableBalls: $('tableBalls'), tableBonus: $('tableBonus'),
   overQuip: $('overQuip'), finalScore: $('finalScore'), bestOver: $('bestOver'),
   boardList: $('boardList'), boardNote: $('boardNote'),
@@ -54,6 +54,13 @@ const TABLE_QUIPS = [
   'Iemand heeft een tafel opengeplooid en is dan vertrokken.',
   'De zaal vult zich. Jouw buis ook.',
   'Tafel erbij, ruimte eraf. Zo werkt dat.'
+];
+
+const FENCE_QUIPS = [
+  'De vakken worden afgeschermd. Alsof het hier niet krap genoeg was.',
+  'Sponsorborden. Iemand moet die centen toch verdienen.',
+  'Er staat weer een bord in de weg. Rijd er maar omheen.',
+  'De omheining staat recht. Jouw route niet meer.'
 ];
 
 const OVER_QUIPS = [
@@ -125,7 +132,7 @@ const Snd = {
 const G = {
   screen: 'title',
   snake: [], dir: { x: 0, y: -1 }, queue: [],
-  balls: 0, score: 0, lives: 3,
+  balls: 0, score: 0, lives: 3, level: 1,
   tables: [], barriers: [], mates: [], doors: [], doorFx: 0,
   food: null, gold: null,
   step: 150,
@@ -381,7 +388,7 @@ function resetSnake(){
 }
 
 function startGame(){
-  G.balls = 0; G.score = 0; G.lives = 3;
+  G.balls = 0; G.score = 0; G.lives = 3; G.level = 1;
   G.tables = []; G.barriers = []; G.mates = []; G.doors = [];
   G.food = null; G.gold = null;
   G.parts = []; G.texts = [];
@@ -422,18 +429,28 @@ function eat(gold){
   G.step = Math.max(75, 150 - G.balls * 2);
 }
 
+/* Elke acht ballen komt er iets bij. Eerst worden de tafels opengeplooid;
+   staat de zaal vol, dan beginnen ze de vakken af te schermen. */
 function newTable(){
-  if (!addTable()) return;
-  if (G.tables.length >= 2) addBarrier();
+  let soort = 'tafel';
+  if (!addTable()){
+    if (!addBarrier()) return;      // zaal is af, verder niets
+    soort = 'omheining';
+  }
+  G.level++;
   syncMates();
   placeDoors();
-  const bonus = 100 * G.tables.length;
+
+  const bonus = 100 * G.level;
   G.score += bonus;
   bumpScore();
-  el.tableCount.textContent = G.tables.length;
+
+  el.tableTitle.textContent = soort === 'tafel' ? 'TAFEL ERBIJ' : 'OMHEINING ERBIJ';
+  el.tableCount.textContent = G.tables.length +
+    (G.barriers.length ? ' + ' + G.barriers.length + ' omheining' + (G.barriers.length > 1 ? 'en' : '') : '');
   el.tableBalls.textContent = G.balls;
   el.tableBonus.textContent = bonus;
-  el.tableQuip.textContent  = pick(TABLE_QUIPS);
+  el.tableQuip.textContent  = soort === 'tafel' ? pick(TABLE_QUIPS) : pick(FENCE_QUIPS);
   Snd.table();
   show('table');
 }
@@ -475,11 +492,21 @@ function gameOver(reason){
 
 /* ---------- één tik ---------- */
 function tick(){
+  /* De trechter wordt tot een hele cel vooruit getekend, maar de bocht
+     draait rond de cel waar de kop logisch staat. Veeg je laat in een
+     stap, dan zag je de trechter al bij het volgende kruispunt staan en
+     draaide hij een baan te vroeg. Zo'n veeg wachten we één tik af, dan
+     valt de bocht op het kruispunt dat je zag. */
   if (G.queue.length){
-    const d = G.queue.shift();
-    if (d.x !== -G.dir.x || d.y !== -G.dir.y){
-      if (d.x !== G.dir.x || d.y !== G.dir.y) G.turnFx = 1;   // even in elkaar duwen
-      G.dir = d;
+    const d = G.queue[0];
+    if (d.wacht > 0){
+      d.wacht--;
+    } else {
+      G.queue.shift();
+      if (d.x !== -G.dir.x || d.y !== -G.dir.y){
+        if (d.x !== G.dir.x || d.y !== G.dir.y) G.turnFx = 1;   // even in elkaar duwen
+        G.dir = { x: d.x, y: d.y };
+      }
     }
   }
 
@@ -529,7 +556,11 @@ function show(name){
   for (const k of ['title', 'how', 'table', 'over', 'board']) el[k].classList.add('hidden');
   if (el[name]) el[name].classList.remove('hidden');
   el.levelTag.classList.toggle('hidden', name !== 'play');
-  if (name === 'play') el.levelTag.textContent = G.tables.length + ' TAFELS IN DE ZAAL';
+  if (name === 'play'){
+    el.levelTag.textContent = G.barriers.length
+      ? G.tables.length + ' TAFELS  ·  ' + G.barriers.length + ' OMHEININGEN'
+      : G.tables.length + ' TAFELS IN DE ZAAL';
+  }
 }
 
 function bumpScore(){
@@ -601,7 +632,7 @@ async function renderBoard(mineTs){
         ['rk', (i + 1) + '.'],
         ['nm', r.name],
         ['sc', String(r.score).padStart(6, '0')],
-        ['lv', r.level + ' tafels']
+        ['lv', 'niveau ' + r.level]
       ]));
     });
   }
@@ -634,6 +665,12 @@ function floor(){
   ctx.strokeStyle = 'rgba(90,50,18,.18)'; ctx.lineWidth = 1;
   for (let y = 1; y < ROWS; y++){
     ctx.beginPath(); ctx.moveTo(0, y * CELL + .5); ctx.lineTo(W, y * CELL + .5); ctx.stroke();
+  }
+  // heel lichte banen in de andere richting, zodat je kan aflezen op
+  // welke rij en kolom je zit zonder dat de vloer een schaakbord wordt
+  ctx.strokeStyle = 'rgba(90,50,18,.09)';
+  for (let x = 1; x < COLS; x++){
+    ctx.beginPath(); ctx.moveTo(x * CELL + .5, 0); ctx.lineTo(x * CELL + .5, H); ctx.stroke();
   }
   // belijning van de zaal
   ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 3;
@@ -1038,7 +1075,9 @@ function turn(x, y){
   const lastDir = G.queue.length ? G.queue[G.queue.length - 1] : G.dir;
   if (x === -lastDir.x && y === -lastDir.y) return;   // niet terugkeren
   if (x === lastDir.x && y === lastDir.y) return;     // zelfde richting
-  if (G.queue.length < 2) G.queue.push({ x, y });
+  // voorbij de helft van de stap hoor je visueel al bij de volgende cel
+  const wacht = (!G.queue.length && G.frac >= 0.5) ? 1 : 0;
+  if (G.queue.length < 2) G.queue.push({ x, y, wacht });
 }
 
 addEventListener('keydown', e => {
@@ -1109,7 +1148,7 @@ el.submitRow.addEventListener('submit', async e => {
   const label = btn.textContent;
   btn.textContent = 'Bezig…';
 
-  const res = await PipsBoard.submit(el.playerName.value, G.score, Math.max(1, G.tables.length));
+  const res = await PipsBoard.submit(el.playerName.value, G.score, Math.max(1, G.level));
 
   btn.disabled = false;
   btn.textContent = label;

@@ -13,11 +13,11 @@ dan in de zaal: jij raapt de ballen op en de ballenbuis achter je wordt almaar l
 - De buis vertrekt pas als je zelf stuurt — ook na een botsing en na elke tafel erbij.
 - ⚪ **Bal** — 10 punten, je buis groeit een stukje.
 - 🟠 **Oranje 3-sterren bal** — 50 punten, en je buis groeit *niet*. Blijft maar even liggen.
-- 🟩 **Tafels** — om de 8 ballen plooit iemand er eentje open. Hoe voller de zaal, hoe krapper.
-  Nooit vlak voor je neus: de baan recht vóór je blijft vrij.
+- 🟩 **Tafels** — om de 8 ballen plooit iemand er eentje open, tot er acht staan. Nooit
+  vlak voor je neus: de baan recht vóór je blijft vrij.
 - 🟦 **Omheiningen** — de lage borden rond de speelvakken. Eén baan breed, drie tot vijf
-  lang, en er komt er eentje bij per tafel. Ze houden altijd een cel speling van tafels en
-  van elkaar, zodat er overal nog een doorgang blijft.
+  lang. Ze komen er pas bij als de zaal vol tafels staat, dus vanaf niveau 9, en houden
+  altijd een cel speling van tafels en van elkaar zodat er overal een doorgang blijft.
 - 🔵 **Clubgenoten** — die wandelen dwars door de zaal en kijken niet uit.
 - 🚪 **Deuren** — vanaf drie tafels staan er twee open, altijd in een muur van de zaal.
   Rij de ene binnen en je komt de andere uit, de zaal in. Je rijrichting wordt dus
@@ -41,6 +41,14 @@ Vier bestanden, geen build, geen dependencies, geen assets.
 - Het speelveld is een raster van 22 × 26 cellen van 20 pixels.
 - Alle geluid is gesynthetiseerd met de Web Audio API.
 - `?debug` in de url zet `window.__BR` open met de spelstaat erin, handig om te testen.
+
+### De bocht valt waar je hem ziet
+
+De trechter wordt tot een hele cel vooruit getekend, maar een bocht draait rond de cel
+waar de kop logisch staat. Veeg je laat in een stap, dan staat de trechter op het scherm
+al bij het volgende kruispunt terwijl de bocht een baan eerder viel — precies het gevoel
+dat je een rij te vroeg afslaat. Een veeg voorbij de helft van de stap wacht daarom één
+tik, zodat de bocht op het kruispunt valt dat je zag liggen.
 
 ### De klok
 
