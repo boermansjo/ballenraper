@@ -44,15 +44,18 @@ verliest als het misgaat.
 
 ## Technisch
 
-Vier bestanden, geen build, geen dependencies, geen assets.
+Vijf bestanden, geen build, geen dependencies, geen assets.
 
 | bestand | inhoud |
 |---|---|
-| `index.html` | HUD, overlays, ticker |
+| `index.html` | HUD, overlays, ticker, og-tags |
 | `style.css` | dezelfde arcade-skin als PIPS OUT! |
-| `game.js` | raster, tekenwerk, geluid |
+| `game.js` | raster, tekenwerk, geluid, de zaal van de dag |
 | `board.js` | de erelijst, gedeeld met de andere clubspellen |
 | `config.js` | sleutels en instellingen |
+| `og.jpg` | 1200×630 kaart voor de link-preview |
+| `tools/og.html` | generator die die kaart opnieuw maakt |
+| `tools/ogsave.py` | piepklein endpoint dat de kaart in de repo schrijft |
 
 - Het speelveld is een raster van 22 × 26 cellen van 20 pixels.
 - Het speeltempo zit in drie constanten bovenaan [`game.js`](game.js): `TRAAGSTE` (de start,
@@ -132,6 +135,45 @@ toestel. Anders ziet wie op reis is een andere dag dan de rest van de club, en k
 zijn ranglijst van vandaag niet. Dat gebeurt met `Intl.DateTimeFormat`, zonder
 bibliotheek; kan de browser dat niet, dan valt het terug op de lokale middernacht.
 
+## Hosten op GitHub Pages
+
+Deze repo staat op <https://github.com/ttcwielsbeke/ballenraper>.
+
+Eenmalig aanzetten: **Settings → Pages → Source: Deploy from a branch → `main` / `/ (root)`**
+(<https://github.com/ttcwielsbeke/ballenraper/settings/pages>).
+
+Een minuutje later staat het spel op **<https://ttcwielsbeke.github.io/ballenraper/>**.
+Vanaf dan is elke `git push` naar `main` meteen een release: er is geen build, dus wat in
+de repo staat, is wat er online staat.
+
+## Op de clubwebsite zetten
+
+Voor wie de spelletjespagina bouwt — alles hieronder is publiek en heeft geen sleutel nodig.
+
+| veld | waarde |
+|---|---|
+| titel | BALLENRAPER |
+| ondertitel | Het tweede videospel van TTC Wielsbeke-Spotit |
+| omschrijving | Raap alles op wat rolt, kieper het in de ballenkar. |
+| afbeelding | `https://ttcwielsbeke.github.io/ballenraper/og.jpg` (1200×630, jpeg) |
+| link | `https://ttcwielsbeke.github.io/ballenraper/` |
+
+## De link-preview opnieuw maken
+
+`og.jpg` is geen screenshot: `tools/og.html` laadt het echte spel in een iframe, zet het op
+een mooie stand — volle buis, tafels, ballenkar — en tekent dat in een kaart van 1200×630.
+Zo blijft de afbeelding vanzelf kloppen als de zaal er ooit anders uitziet.
+
+```bash
+python tools/ogsave.py        # schrijft de binnenkomende JPEG naar de repo
+python -m http.server 8130    # en in een tweede terminal
+```
+
+Open dan <http://localhost:8130/tools/og.html>. De pagina tekent zichzelf en post het
+resultaat als `og.jpg`. Daarna committen en pushen; Facebook haalt de nieuwe versie op via
+<https://developers.facebook.com/tools/debug/> → **Scrape Again**. Hou het tabblad zichtbaar
+terwijl het tekent: een achtergrondtabblad tekent niet en dan blijft de zaal leeg.
+
 ## Lokaal draaien
 
 ```bash
@@ -183,8 +225,8 @@ create policy "score toevoegen"
 ```
 
 Net als bij PIPS OUT! staat er bewust **geen** update- of delete-policy: scores kunnen
-toegevoegd en gelezen worden, maar niet gewijzigd of gewist. `level` is hier het aantal
-tafels dat je gehaald hebt.
+toegevoegd en gelezen worden, maar niet gewijzigd of gewist. `level` is hier het niveau
+dat je gehaald hebt — eerst de acht tafels, daarna de omheiningen.
 
 Daarna in `config.js` de Project URL en de publishable key invullen, en pushen. De kolom
 `game` staat er al in, zodat er later makkelijk één gezamenlijke ranglijst over alle
